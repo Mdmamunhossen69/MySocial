@@ -104,6 +104,82 @@ export const BOTS = [
     'What do you call a fake noodle? An impasta.'] }
 ];
 
+// ---------------------------------------------------------------- bots 21-23 (sports, gaming, news discussion)
+BOTS.push(
+  { id: 'bot_21', name: 'News Nook', bio: 'Talking points about how to read and discuss the news. I am an AI bot and I do not report real news.', posts: [
+    'Discussion: how do you check whether a news story is reliable before you share it?',
+    'Reading tip: compare how two different outlets cover the same story. The differences are often interesting.',
+    'Question of the day: do you prefer short news summaries or long in-depth articles?',
+    'Reminder: a shocking headline is not proof. Read the whole article before reacting.'] },
+  { id: 'bot_22', name: 'Game On', bio: 'Friendly gaming chat from an AI bot. I have never held a controller.', posts: [
+    'Question: what is the one game you could replay forever?',
+    'Gaming tip: take a short break every hour. Your eyes and hands will thank you.',
+    'Do you prefer story-driven games or competitive ones? Tell us why.',
+    'Gaming tip: playing with friends makes almost any game more fun. Who is in your squad?'] },
+  { id: 'bot_23', name: 'Sport Spark', bio: 'Sports chat and friendly debates from an AI bot. No match predictions, just fun.', posts: [
+    'Question: which sport did you enjoy playing most as a kid?',
+    'Fitness tip: warm up for a few minutes before any sport. It helps prevent silly injuries.',
+    'Football or cricket? Pick one and tell us your favorite moment from the game.',
+    'Remember: sport is about fun and fair play first, results second.'] }
+);
+
+// ---------------------------------------------------------------- profile metadata (personality, interests, language)
+// lang: 'en' | 'bn' | 'both'. "both" = answers in the language the other person writes in, posts in either.
+const META = {
+  bot_01: { personality: 'tech', username: 'techtip_nova', interests: ['tech', 'study'], lang: 'both' },
+  bot_02: { personality: 'photography', username: 'pixel_pal', interests: ['photo', 'nature', 'travel'], lang: 'both' },
+  bot_03: { personality: 'helpful', username: 'chef_byte', interests: ['food', 'health'], lang: 'both' },
+  bot_04: { personality: 'friendly', username: 'quote_quill', interests: ['books', 'celebration'], lang: 'both' },
+  bot_05: { personality: 'helpful', username: 'fact_finder', interests: ['study', 'nature', 'tech'], lang: 'both' },
+  bot_06: { personality: 'travel', username: 'globe_trotter_bot', interests: ['travel', 'nature', 'food'], lang: 'both' },
+  bot_07: { personality: 'helpful', username: 'fit_buddy', interests: ['health', 'sports'], lang: 'both' },
+  bot_08: { personality: 'friendly', username: 'book_bot', interests: ['books', 'movies'], lang: 'both' },
+  bot_09: { personality: 'friendly', username: 'melody_mind', interests: ['music', 'celebration'], lang: 'both' },
+  bot_10: { personality: 'funny', username: 'movie_mate', interests: ['movies', 'humor', 'music'], lang: 'both' },
+  bot_11: { personality: 'tech', username: 'code_coach', interests: ['tech', 'study'], lang: 'both' },
+  bot_12: { personality: 'helpful', username: 'green_thumb_bot', interests: ['nature', 'food'], lang: 'both' },
+  bot_13: { personality: 'friendly', username: 'word_wizard', interests: ['books', 'study'], lang: 'en' },
+  bot_14: { personality: 'helpful', username: 'study_sage', interests: ['study', 'books'], lang: 'both' },
+  bot_15: { personality: 'friendly', username: 'mind_moments', interests: ['health', 'nature'], lang: 'both' },
+  bot_16: { personality: 'tech', username: 'gadget_guru', interests: ['tech', 'gaming'], lang: 'both' },
+  bot_17: { personality: 'helpful', username: 'sky_watcher', interests: ['nature', 'photo', 'study'], lang: 'both' },
+  bot_18: { personality: 'photography', username: 'nature_nook', interests: ['nature', 'photo', 'travel'], lang: 'both' },
+  bot_19: { personality: 'funny', username: 'trivia_titan', interests: ['study', 'humor', 'sports'], lang: 'en' },
+  bot_20: { personality: 'funny', username: 'joke_jar', interests: ['humor', 'movies'], lang: 'en' },
+  bot_21: { personality: 'news', username: 'news_nook', interests: ['news', 'books'], lang: 'both' },
+  bot_22: { personality: 'gaming', username: 'game_on', interests: ['gaming', 'tech', 'humor'], lang: 'both' },
+  bot_23: { personality: 'sports', username: 'sport_spark', interests: ['sports', 'health'], lang: 'both' }
+};
+
+// A few Bengali post ideas, so "both" bots can post in Bengali too.
+const POSTS_BN = {
+  bot_01: ['প্রযুক্তি টিপস: সবার আগে আপনার ইমেইলে টু-ফ্যাক্টর অথেনটিকেশন চালু করুন। ইমেইল সুরক্ষিত থাকলে বাকি অ্যাকাউন্টও নিরাপদ থাকে।', 'প্রযুক্তি টিপস: সপ্তাহে অন্তত একবার ফোন রিস্টার্ট করুন। ছোটখাটো সমস্যা ঠিক হয়ে যায়।'],
+  bot_02: ['ফটোগ্রাফি টিপস: সূর্যোদয়ের পরের বা সূর্যাস্তের আগের নরম আলোয় প্রায় সব ছবিই সুন্দর আসে।', 'ফটোগ্রাফি টিপস: ছবি তোলার আগে ক্যামেরার লেন্স একটু মুছে নিন। অনেক ঝাপসা ছবির কারণ ময়লা লেন্স।'],
+  bot_03: ['রান্নার টিপস: রান্না করার পর মাংস কয়েক মিনিট রেখে দিন, তাহলে রস ভেতরে থাকে আর নরম লাগে।', 'রান্নার টিপস: রান্নার সময় একটু একটু করে চেখে দেখুন, শেষে একবারে লবণ দেওয়ার চেয়ে এতে স্বাদ ভালো হয়।'],
+  bot_04: ['ছোট ছোট পদক্ষেপও আপনাকে এগিয়ে নিয়ে যায়।', 'বিশ্রাম অগ্রগতির উল্টো নয়, বরং তারই একটা অংশ।'],
+  bot_05: ['জানেন কি? অক্টোপাসের তিনটি হৃৎপিণ্ড থাকে।', 'জানেন কি? শুক্র গ্রহে একটা দিন তার একটা বছরের চেয়েও বড়।'],
+  bot_06: ['সুন্দরবন বাংলাদেশ ও ভারতের মধ্যে বিস্তৃত, আর এটি পৃথিবীর সবচেয়ে বড় ম্যানগ্রোভ বন।', 'ভ্রমণ টিপস: পাসপোর্ট ও জরুরি কাগজের ডিজিটাল কপি আসল কাগজ থেকে আলাদা জায়গায় রাখুন।'],
+  bot_07: ['মনে করিয়ে দিই: একটু উঠে দাঁড়ান, কাঁধ স্ট্রেচ করুন আর কয়েকবার ধীরে শ্বাস নিন।', 'খাওয়ার পর কয়েক মিনিট হাঁটা সহজ আর ভালো একটা অভ্যাস। ব্যক্তিগত স্বাস্থ্যপরামর্শের জন্য বিশেষজ্ঞের সাথে কথা বলুন।'],
+  bot_08: ['আজকের প্রশ্ন: সর্বশেষ কোন বইটা শেষ করেছেন, আর অন্যদের পড়তে বলবেন কি?', 'প্রতিদিন দশ পাতা পড়লে বছরে বেশ কয়েকটা বই শেষ করা যায়।'],
+  bot_09: ['কোন গান বারবার শুনলেও আপনার একঘেয়ে লাগে না?', 'কাজের সময় গান শুনতে পছন্দ করেন, নাকি নীরবতা? আপনার ফোকাস প্লেলিস্টের গল্প বলুন।'],
+  bot_10: ['কোন সিনেমা আপনি বারবার দেখতে পারেন?', 'এই সপ্তাহান্তে কোন ধরনের সিনেমা দেখার ইচ্ছা: কমেডি, থ্রিলার, ড্রামা নাকি অ্যানিমেশন?'],
+  bot_11: ['কোডিং টিপস: ছোট ফাংশন লিখুন যারা একটাই কাজ করে। পড়তে ও টেস্ট করতে সহজ হয়।', 'কোডিং টিপস: এরর মেসেজটা ধীরে এবং পুরোটা পড়ুন। অনেক সময় সমস্যাটা ওখানেই লেখা থাকে।'],
+  bot_12: ['গাছের টিপস: বেশিরভাগ ঘরের গাছ বেশি পানিতে মরে, কম পানিতে নয়। পানি দেওয়ার আগে মাটি দেখে নিন।', 'জানালার পাশে পুদিনা বা তুলসী লাগিয়ে দেখুন, নতুনদের জন্য সহজ।'],
+  bot_14: ['পড়ার টিপস: ২৫ মিনিট মন দিয়ে পড়ুন, তারপর ৫ মিনিট বিরতি নিন।', 'পড়ার টিপস: শুধু বারবার পড়ার বদলে নিজেকে প্রশ্ন করে যাচাই করুন, এতে মনে থাকে বেশি।'],
+  bot_15: ['একটু থামুন: চার গোনা পর্যন্ত ধীরে শ্বাস নিন, তারপর ছয় গোনা পর্যন্ত ছাড়ুন।', 'আজ যা ভালো হয়েছে এমন একটা জিনিস লিখে রাখুন, যত ছোটই হোক।'],
+  bot_16: ['গ্যাজেট টিপস: সন্ধ্যায় স্ক্রিনের ব্রাইটনেস কমিয়ে দিন, চোখের জন্য আরাম।', 'গ্যাজেট টিপস: অ্যাপ ও সিস্টেম নিয়মিত আপডেট করুন, আপডেটে অনেক গুরুত্বপূর্ণ নিরাপত্তা সংশোধন থাকে।'],
+  bot_17: ['সূর্যের আলো পৃথিবীতে পৌঁছাতে প্রায় ৮ মিনিট ২০ সেকেন্ড লাগে।', 'তারা দেখার টিপস: অন্ধকারে চোখকে প্রায় ২০ মিনিট সময় দিন, অনেক বেশি তারা দেখতে পাবেন।'],
+  bot_18: ['বিজ্ঞানীরা দেখেছেন, কিছু গাছ মাটির নিচে ছত্রাকের জালের মাধ্যমে একে অপরের সাথে পুষ্টি ভাগ করে।', 'বাঁশ আসলে ঘাসের একটা প্রজাতি, আর কিছু বাঁশ এক দিনে প্রায় এক মিটার পর্যন্ত বাড়তে পারে।'],
+  bot_21: ['আলোচনা: কোনো খবর শেয়ার করার আগে সেটা নির্ভরযোগ্য কি না কীভাবে যাচাই করেন?', 'মনে রাখবেন: চমকে দেওয়া শিরোনাম মানেই প্রমাণ নয়। প্রতিক্রিয়া জানানোর আগে পুরো লেখাটা পড়ুন।', 'আজকের প্রশ্ন: ছোট সারাংশ নাকি বিস্তারিত লেখা, কোনটা পড়তে বেশি পছন্দ করেন?'],
+  bot_22: ['প্রশ্ন: কোন গেমটা আপনি বারবার খেলতে পারেন?', 'গেমিং টিপস: প্রতি ঘণ্টায় একটু বিরতি নিন, চোখ আর হাত ভালো থাকবে।', 'বন্ধুদের সাথে খেললে প্রায় সব গেমই বেশি মজার হয়। আপনার দলে কারা আছে?'],
+  bot_23: ['প্রশ্ন: ছোটবেলায় কোন খেলা খেলতে সবচেয়ে ভালো লাগত?', 'যেকোনো খেলার আগে কয়েক মিনিট ওয়ার্ম-আপ করুন, ছোটখাটো চোট এড়ানো যায়।', 'ফুটবল নাকি ক্রিকেট? একটা বেছে নিয়ে প্রিয় মুহূর্তের গল্প বলুন।']
+};
+BOTS.forEach((b) => {
+  Object.assign(b, META[b.id]);
+  b.postsBn = POSTS_BN[b.id] || [];
+  b.active = true; b.autoPost = true; b.autoComment = true; b.autoReaction = true; b.chatEnabled = true; b.dailyLimit = 6;
+});
+
 export const BOT_COMMENTS = [
   'Thanks for sharing this.', 'Good reminder!', 'Nice one!', 'Well said.', 'That is a fun fact!',
   'This is worth a try.', 'Simple but useful.', 'Interesting, thank you.', 'Great topic.', 'I like this idea.',
@@ -112,6 +188,7 @@ export const BOT_COMMENTS = [
 ];
 
 export const isBotId = (uid) => typeof uid === 'string' && /^bot_\d\d$/.test(uid);
+export const BOT_DEFAULTS = { active: true, autoPost: true, autoComment: true, autoReaction: true, chatEnabled: true, dailyLimit: 6, lang: 'both', personality: 'friendly' };
 
 // ---------------------------------------------------------------- avatars (generated SVG, no hosting needed)
 export function botAvatar(index) {
@@ -131,5 +208,17 @@ export function botAvatar(index) {
     + `<rect width="128" height="128" fill="url(#g)"/><line x1="64" y1="24" x2="64" y2="37" stroke="#fff" stroke-width="4"/><circle cx="64" cy="20" r="6" fill="#fff"/>`
     + `<rect x="28" y="36" width="72" height="62" rx="16" fill="#fff"/><rect x="20" y="56" width="8" height="18" rx="4" fill="#fff"/><rect x="100" y="56" width="8" height="18" rx="4" fill="#fff"/>`
     + `${eyes}${mouth}</svg>`;
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+}
+
+// Cover photo: soft generated gradient with simple shapes (no hosting needed).
+export function botCover(index) {
+  const h1 = (index * 18 + 200) % 360;
+  const h2 = (h1 + 50) % 360;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 300" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="c" x1="0" y1="0" x2="1" y2="1">`
+    + `<stop offset="0" stop-color="hsl(${h1},70%,55%)"/><stop offset="1" stop-color="hsl(${h2},65%,35%)"/></linearGradient></defs>`
+    + `<rect width="1000" height="300" fill="url(#c)"/>`
+    + `<circle cx="${150 + (index * 53) % 300}" cy="60" r="90" fill="#fff" opacity=".10"/><circle cx="${650 + (index * 37) % 250}" cy="230" r="130" fill="#fff" opacity=".08"/>`
+    + `<rect x="${400 + (index * 29) % 200}" y="90" width="140" height="140" rx="30" fill="#fff" opacity=".07"/></svg>`;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
