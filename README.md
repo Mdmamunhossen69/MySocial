@@ -27,7 +27,24 @@ Accounts (email/password and Google) · profiles with photo, cover and bio · fe
 * বটের পোস্ট ও কমেন্ট শুধু **আপনার অ্যাডমিন অ্যাকাউন্ট** দিয়ে হয়, `firestore.rules` সেটা যাচাই করে। বট **কোনো ভিডিও পোস্ট করতে পারে না** (রুলসেও আটকানো), শুধু লেখা ও ছবি। ওয়েবসাইট বা GitHub-এ কোনো অ্যাডমিন credential নেই।
 * ব্যবহার: অ্যাডমিন হিসেবে লগইন → Admin → **AI Bots** ট্যাব → *Create the 20 bots* → তারপর *Run round* (এলোমেলো বট পোস্ট ও কমেন্ট করবে) বা *Post as a bot* / *Comment as a bot*।
 * নতুন রুলস লাগবে: `firestore.rules` আবার Publish করতে হবে।
-* সময়মতো নিজে নিজে পোস্ট করতে সার্ভার/শিডিউলার লাগে, যা ফ্রি Spark প্ল্যানে নেই। তাই এখন বাটন চাপলে চলে।
+
+#### অটোমেটিক পোস্ট ও কমেন্ট (GitHub Actions, ফ্রি)
+
+`.github/workflows/bot-runner.yml` প্রতি ৬ ঘণ্টায় (UTC) `scripts/bot-runner.mjs` চালায়। প্রতি রানে ১-২টা বট-পোস্ট ও ১-৩টা বট-কমেন্ট হয়। বটরা **শুধু অন্য বটের পোস্টে** কমেন্ট করে, আসল ইউজারের পোস্টে নয় (ওটা স্প্যাম মনে হতো)। প্রতিটা বট নিজের সব পোস্ট-আইডিয়া শেষ না করে একই লেখা রিপিট করে না।
+
+নিরাপত্তা: Firebase Admin key/service account **ব্যবহার হয় না**। একটা আলাদা সাধারণ Auth অ্যাকাউন্ট ("bot runner") দিয়ে লগইন করে, আর Rules অনুযায়ী ওই অ্যাকাউন্ট শুধু বটের হয়ে পোস্ট/কমেন্ট করতে পারে, আসল ইউজারের কিছুতে হাত দিতে পারে না। পাসওয়ার্ড থাকে GitHub Secrets-এ, রিপোতে নয়।
+
+চালু করার ধাপ (একবারই):
+1. `firestore.rules` আবার Publish করুন।
+2. Firebase → Authentication → Users → **Add user**: একটা নতুন ইমেইল (যেমন `botrunner@yourmail.com`, আসল ইনবক্স না লাগলেও চলে) ও লম্বা পাসওয়ার্ড দিন। এই অ্যাকাউন্টের **UID** কপি করুন।
+3. Firestore → `botRunners` কালেকশন → ডকুমেন্ট ID = ওই UID, একটা ফিল্ড `enabled` = `true`।
+4. সাইটে অ্যাডমিন হিসেবে Admin → AI Bots → **Create the 20 bots** (একবার)।
+5. GitHub রিপো → Settings → Secrets and variables → Actions → **New repository secret**: `BOT_RUNNER_EMAIL` ও `BOT_RUNNER_PASSWORD`।
+6. রিপো → Actions ট্যাব → *AI bot activity* → **Run workflow** দিয়ে একবার হাতে চালিয়ে দেখুন। এরপর নিজে থেকেই চলবে।
+
+বন্ধ করতে: Secret মুছুন, বা Actions-এ workflow *Disable* করুন, বা Firestore থেকে `botRunners` ডকুমেন্ট মুছুন।
+
+সীমা: পোস্টের আইডিয়া মোট ৮০টা (প্রতি বটের ৪টা), শেষ হলে আবার প্রথম থেকে ঘোরে। আরও আইডিয়া `js/bots-data.js`-এ যোগ করা যায়। সময়সূচি বদলাতে workflow-এর `cron` লাইন এডিট করুন। GitHub পাবলিক রিপোতে ৬০ দিন কোনো কমিট না হলে scheduled workflow নিজে থেকে বন্ধ করে দেয়, তখন Actions ট্যাব থেকে আবার Enable করতে হয়।
 
 ### Optional
 

@@ -18,6 +18,12 @@ service cloud.firestore {
     function isAdmin() {
       return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
+    // The automation account used by the scheduled GitHub Action. It is a normal Firebase Auth
+    // user whose uid has a document in /botRunners (created by hand in the console). It can ONLY
+    // write as AI bots (see the bot branches below) and cannot ban, delete or edit real users.
+    function isBotRunner() {
+      return signedIn() && exists(/databases/$(database)/documents/botRunners/$(request.auth.uid));
+    }
     function notBanned() {
       return signedIn()
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.banned != true;
@@ -56,6 +62,16 @@ service cloud.firestore {
     match /admins/{uid} {
       allow read: if isOwner(uid);
       allow write: if false;
+    }
+
+    // ---------- bot automation ----------
+    match /botRunners/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false; // create by hand in the Firebase console
+    }
+    // Scratch state for the scheduled job (which post ideas were used, which posts got comments).
+    match /botState/{id} {
+      allow read, write: if isBotRunner();
     }
 
     // ---------- users ----------
@@ -112,8 +128,8 @@ service cloud.firestore {
           && validPost(request.resource.data)
           && (request.resource.data.groupId == null
               || request.auth.uid in groupDoc(request.resource.data.groupId).members))
-        // admin posting as an AI bot: public, text/photo only, never a video
-        || (isAdmin()
+        // admin (or the bot-runner account) posting as an AI bot: public, text/photo only, never a video
+        || ((isAdmin() || isBotRunner())
           && isBotUser(request.resource.data.uid)
           && validPost(request.resource.data)
           && request.resource.data.visibility == 'public'
@@ -122,14 +138,18 @@ service cloud.firestore {
 
       // Anyone signed in may only touch: their own key in `reactions`,
       // or a counter by exactly one step.
-      allow update: if notBanned() && (
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
-          && request.resource.data.reactions.diff(resource.data.reactions).affectedKeys().hasOnly([request.auth.uid]))
-        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount'])
+      // The bot-runner may only bump commentCount by one (after commenting as a bot).
+      allow update: if (isBotRunner()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount'])
           && math.abs(request.resource.data.commentCount - resource.data.commentCount) <= 1)
-        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['shareCount'])
-          && math.abs(request.resource.data.shareCount - resource.data.shareCount) <= 1)
-      );
+        || (notBanned() && (
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+            && request.resource.data.reactions.diff(resource.data.reactions).affectedKeys().hasOnly([request.auth.uid]))
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount'])
+            && math.abs(request.resource.data.commentCount - resource.data.commentCount) <= 1)
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['shareCount'])
+            && math.abs(request.resource.data.shareCount - resource.data.shareCount) <= 1)
+        ));
 
       allow delete: if isOwner(resource.data.uid) || isAdmin();
 
@@ -141,8 +161,8 @@ service cloud.firestore {
             && request.resource.data.uid == request.auth.uid
             && textOk(request.resource.data.text, 2000)
             && canSeePost(get(/databases/$(database)/documents/posts/$(postId)).data))
-          // admin commenting as an AI bot (public posts only)
-          || (isAdmin()
+          // admin (or the bot-runner account) commenting as an AI bot (public posts only)
+          || ((isAdmin() || isBotRunner())
             && isBotUser(request.resource.data.uid)
             && textOk(request.resource.data.text, 2000)
             && get(/databases/$(database)/documents/posts/$(postId)).data.visibility == 'public');

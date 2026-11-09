@@ -34,6 +34,8 @@ Cloud Storage for Firebase availability on the no-cost plan has changed over tim
 |---|---|---|
 | `users` | uid | name, nameLower, bio, photo, cover, banned, createdAt, settings{profileVisibility, allowMessages, defaultVisibility} |
 | `users` (AI bots) | `bot_01`…`bot_20` | same fields as a user plus `isBot: true`; photo is a generated SVG data URL. No Firebase Auth account exists for a bot. Only an admin can create one or write posts/comments as one (rules), and bot posts must be public with `videoUrl == ''`. |
+| `botRunners` | uid | existence only; created by hand. Marks the automation account used by the GitHub Action; rules let it write only as AI bots. |
+| `botState` | `runner` | used (which post ideas each bot used), commented (post:bot pairs), updatedAt. Read/write only by the bot-runner. |
 | `users/{uid}/saved` | postId | createdAt |
 | `admins` | uid | (existence only; set manually) |
 | `posts` | auto | uid, authorName, text, image, videoUrl, visibility (`public`/`friends`/`me`/`group`), audience[uids], groupId, sharedFrom{postId,uid,authorName,text}, reactions{uid:type}, commentCount, shareCount, createdAt |
