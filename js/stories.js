@@ -1,7 +1,10 @@
 // 24-hour stories: strip on the feed, creator, full-screen viewer.
 import { db, collection, addDoc, deleteDoc, doc, getDocs, query, where, serverTimestamp, Timestamp } from './firebase.js';
 import { state } from './state.js';
-import { $, $$, esc, avatarHtml, prefetchUsers, toast, modal, closeModal, resizeImage, tsMs, timeAgo, errMsg } from './utils.js';
+import {
+  $, $$, esc, avatarHtml, prefetchUsers, toast, modal, closeModal, resizeImage, tsMs, timeAgo, errMsg,
+  isIndexError, indexLinkFrom, showIndexNotice
+} from './utils.js';
 import { icon } from './icons.js';
 
 const VIEWED_KEY = 'mysocial-viewed-stories';
@@ -39,8 +42,10 @@ export async function renderStories(container) {
   try {
     items = await loadStories();
   } catch (e) {
+    const url = isIndexError(e) ? indexLinkFrom(e) : null;
+    if (url) showIndexNotice(url);
     container.innerHTML = `<div class="stories card"><button class="story add" data-add><span class="story-plus">${icon('plus', 22)}</span><small>Add story</small></button>
-      <span class="muted small">Stories unavailable: ${esc(errMsg(e)).slice(0, 140)}</span></div>`;
+      <span class="muted small">${isIndexError(e) ? 'Stories need a one-time index (see the bar at the top).' : `Stories unavailable: ${esc(errMsg(e)).slice(0, 100)}`}</span></div>`;
     $('[data-add]', container).addEventListener('click', () => openCreator(() => renderStories(container)));
     return;
   }

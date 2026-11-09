@@ -124,12 +124,48 @@ export function toast(msg, type = 'info', ms = 4000) {
   setTimeout(() => el.remove(), ms);
 }
 
+// Firestore puts a "create this index" console link inside the error message.
+export function indexLinkFrom(e) {
+  const m = (e && e.message) || String(e || '');
+  if (!/index/i.test(m)) return null;
+  return (m.match(/https:\/\/console\.firebase\.google\.com[^\s"')]*/) || [])[0] || null;
+}
+
+export function isIndexError(e) {
+  const m = (e && e.message) || String(e || '');
+  return /requires an index|query requires/i.test(m) || (e && e.code === 'failed-precondition' && /index/i.test(m));
+}
+
+// One dismissible bar under the top bar, with one button per missing index.
+export function showIndexNotice(url) {
+  let bar = $('#index-notice');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'index-notice';
+    bar.className = 'index-notice';
+    bar.innerHTML = `<div><b>One-time setup:</b> a Firestore index is missing (free, takes 1-2 min to build).
+      <span data-links></span> Then reload this page.</div>
+      <button class="icon-btn" data-dismiss aria-label="Dismiss">${icon('x')}</button>`;
+    bar.querySelector('[data-dismiss]').addEventListener('click', () => bar.remove());
+    const top = $('.topbar');
+    if (top) top.after(bar); else document.body.prepend(bar);
+  }
+  const holder = bar.querySelector('[data-links]');
+  if (url && !holder.querySelector(`[href="${CSS.escape(url)}"]`)) {
+    const n = holder.children.length + 1;
+    const a = document.createElement('a');
+    a.className = 'btn btn-primary';
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = `Create index ${n}`;
+    holder.appendChild(a);
+  }
+}
+
 export function errMsg(e) {
   const m = (e && e.message) || String(e);
-  if (/requires an index/i.test(m)) {
-    const link = (m.match(/https:\/\/console\.firebase\.google\.com[^\s]*/) || [])[0];
-    return 'Firestore needs an index for this view. Open the link below once to create it (free).' + (link ? `\n${link}` : '');
-  }
+  if (isIndexError(e)) return 'This view needs a one-time Firestore index. Use the "Create index" button, then reload.';
   if (e && e.code === 'permission-denied') return 'Permission denied. Check that firestore.rules are published.';
   return m;
 }
@@ -262,5 +298,12 @@ export function emptyState(title, text = '') {
 }
 
 export function errorBox(e) {
-  return `<div class="notice notice-error">${esc(errMsg(e)).replace(/\n/g, '<br>').replace(/(https:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>')}</div>`;
+  if (isIndexError(e)) {
+    const url = indexLinkFrom(e);
+    if (url) showIndexNotice(url);
+    return `<div class="notice notice-error"><b>This view needs a one-time Firestore index</b> (free).
+      ${url ? `<p><a class="btn btn-primary" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Create index</a></p>` : ''}
+      <span class="small">When the index status is "Enabled" in the Firebase console (1-2 minutes), reload this page.</span></div>`;
+  }
+  return `<div class="notice notice-error">${esc(errMsg(e))}</div>`;
 }

@@ -4,7 +4,10 @@ import {
   orderBy, limit, onSnapshot, getDocs
 } from './firebase.js';
 import { state, runCleanups, subscribe, emit } from './state.js';
-import { $, $$, esc, avatarHtml, debounce, errorBox, closeModal, getUser, tsMs, toast } from './utils.js';
+import {
+  $, $$, esc, avatarHtml, debounce, errorBox, closeModal, getUser, tsMs, toast,
+  isIndexError, indexLinkFrom, showIndexNotice
+} from './utils.js';
 import { icon } from './icons.js';
 import { toggleTheme, effectiveTheme } from './theme.js';
 import { renderAuth, renderSetupNeeded, ensureProfile } from './auth.js';
@@ -35,7 +38,8 @@ function stopSession() {
 function listen(q, onNext, label) {
   const unsub = onSnapshot(q, onNext, (err) => {
     console.warn(`[listener:${label}]`, err);
-    if (err && /index/i.test(err.message || '')) toast('A Firestore index is missing. See the browser console for the link.', 'error', 8000);
+    if (isIndexError(err)) showIndexNotice(indexLinkFrom(err));
+    else if (err && err.code === 'permission-denied') toast(`Permission denied (${label}). Publish the latest firestore.rules.`, 'error', 7000);
   });
   state.globalUnsubs.push(unsub);
 }
