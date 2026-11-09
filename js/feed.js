@@ -6,7 +6,7 @@ import {
 import { state, onCleanup, navigate } from './state.js';
 import {
   $, $$, esc, linkify, timeAgo, fullDate, avatarHtml, prefetchUsers, getUser, toast, modal, closeModal,
-  confirmBox, resizeImage, parseVideoUrl, videoHtml, notify, tsMs, errMsg, errorBox, emptyState, REACTIONS
+  confirmBox, resizeImage, parseVideoUrl, videoHtml, notify, tsMs, errMsg, errorBox, emptyState, REACTIONS, botBadge
 } from './utils.js';
 import { icon } from './icons.js';
 import { renderStories } from './stories.js';
@@ -102,7 +102,7 @@ export function postHtml(post, users, { detail = false } = {}) {
     <header class="post-head">
       <a href="#/profile/${esc(post.uid)}">${avatarHtml(author.name, author.photo, 40)}</a>
       <div class="post-meta">
-        <a class="author" href="#/profile/${esc(post.uid)}">${esc(author.name)}</a>
+        <a class="author" href="#/profile/${esc(post.uid)}">${esc(author.name)}</a>${botBadge(author)}
         <a class="muted small" href="#/post/${esc(post.id)}" title="${esc(fullDate(post.createdAt))}">${timeAgo(post.createdAt)}</a>
         <span class="muted small" title="${visLabel}">${icon(visIcon, 12)}</span>
       </div>
@@ -228,7 +228,7 @@ function commentHtml(c, post, users) {
   const can = c.uid === state.user.uid || post.uid === state.user.uid || state.isAdmin;
   return `<div class="comment" data-cid="${esc(c.id)}">
     <a href="#/profile/${esc(c.uid)}">${avatarHtml(a.name, a.photo, 32)}</a>
-    <div class="bubble"><a class="author" href="#/profile/${esc(c.uid)}">${esc(a.name)}</a><div>${linkify(c.text)}</div>
+    <div class="bubble"><a class="author" href="#/profile/${esc(c.uid)}">${esc(a.name)}</a>${botBadge(a)}<div>${linkify(c.text)}</div>
       <div class="small muted">${timeAgo(c.createdAt)}${can ? ` · <button class="link-btn danger-text" data-del-comment>Delete</button>` : ''}</div></div>
   </div>`;
 }

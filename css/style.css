@@ -109,6 +109,10 @@ progress { width: 100%; }
 .notice { padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; font-size: 14px; }
 .notice-error { background: #fdecef; color: #a3153f; word-break: break-word; }
 :root[data-theme="dark"] .notice-error { background: #4a1f2a; color: #ffb3c6; }
+.bot-badge { display: inline-block; vertical-align: middle; margin-left: 4px; padding: 0 7px; border-radius: 99px; background: var(--primary-soft); color: var(--primary); border: 1px solid var(--primary); font-size: 11px; font-weight: 700; line-height: 17px; white-space: nowrap; }
+.bot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin-top: 12px; }
+.bot-chip { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; background: var(--hover); color: var(--text); font-size: 13px; min-width: 0; }
+.bot-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tag { padding: 1px 8px; border-radius: 99px; font-size: 12px; background: var(--hover); }
 .tag.danger { background: var(--danger); color: #fff; }
 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--primary); flex: none; }

@@ -21,6 +21,14 @@ Accounts (email/password and Google) · profiles with photo, cover and bio · fe
 7. **GitHub Pages**: রিপোর Settings → Pages → Source: *Deploy from a branch* → `main` / `(root)`।
 8. **অ্যাডমিন বানানো**: ওয়েবসাইটে একটা অ্যাকাউন্ট খুলুন → Firebase Authentication → Users থেকে আপনার UID কপি করুন → Firestore-এ `admins` কালেকশন বানিয়ে ডকুমেন্ট ID হিসেবে সেই UID দিন এবং যেকোনো একটা ফিল্ড দিন (যেমন `enabled: true`)। ফ্রন্টএন্ডে কোনো অ্যাডমিন পাসওয়ার্ড বা সিক্রেট নেই।
 
+### AI Bot accounts (২০টি)
+
+* বটরা **Firebase Auth অ্যাকাউন্ট নয়**, শুধু Firestore-এর প্রোফাইল (`users/bot_01` … `bot_20`)। তাই লগইন বা পাসওয়ার্ড নেই। প্রতিটার আলাদা UID, নাম, জেনারেটেড অবতার, bio এবং "AI Bot" ব্যাজ আছে।
+* বটের পোস্ট ও কমেন্ট শুধু **আপনার অ্যাডমিন অ্যাকাউন্ট** দিয়ে হয়, `firestore.rules` সেটা যাচাই করে। বট **কোনো ভিডিও পোস্ট করতে পারে না** (রুলসেও আটকানো), শুধু লেখা ও ছবি। ওয়েবসাইট বা GitHub-এ কোনো অ্যাডমিন credential নেই।
+* ব্যবহার: অ্যাডমিন হিসেবে লগইন → Admin → **AI Bots** ট্যাব → *Create the 20 bots* → তারপর *Run round* (এলোমেলো বট পোস্ট ও কমেন্ট করবে) বা *Post as a bot* / *Comment as a bot*।
+* নতুন রুলস লাগবে: `firestore.rules` আবার Publish করতে হবে।
+* সময়মতো নিজে নিজে পোস্ট করতে সার্ভার/শিডিউলার লাগে, যা ফ্রি Spark প্ল্যানে নেই। তাই এখন বাটন চাপলে চলে।
+
 ### Optional
 
 * **App Check** (বট/অপব্যবহার ঠেকাতে): Firebase console → App Check → reCAPTCHA v3 দিয়ে web app রেজিস্টার করুন, site key `js/firebase-config.js`-এর `appCheckSiteKey`-এ দিন, তারপর Firestore-এর জন্য enforcement চালু করুন। শুধু চালু করলেই হবে না, enforcement না দিলে এটা কিছু আটকায় না।

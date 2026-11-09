@@ -36,6 +36,21 @@ service cloud.firestore {
         || request.auth.uid in p.audience
         || (p.visibility == 'group' && request.auth.uid in groupDoc(p.groupId).members);
     }
+    // AI bot accounts are plain Firestore profile docs (users/bot_NN) with isBot == true.
+    // They have no Firebase Auth login. Only an admin can create them or write as them.
+    function isBotUser(id) {
+      return exists(/databases/$(database)/documents/users/$(id))
+        && get(/databases/$(database)/documents/users/$(id)).data.get('isBot', false) == true;
+    }
+    function validPost(d) {
+      return textOk(d.text, 5000)
+        && d.visibility in ['public', 'friends', 'me', 'group']
+        && d.audience is list
+        && d.audience.size() <= 1500
+        && d.reactions == {}
+        && d.commentCount == 0
+        && d.shareCount == 0;
+    }
 
     // ---------- admins (read-only for the admin themself) ----------
     match /admins/{uid} {
@@ -46,18 +61,34 @@ service cloud.firestore {
     // ---------- users ----------
     match /users/{uid} {
       allow read: if signedIn();
-      allow create: if isOwner(uid)
-        && textOk(request.resource.data.name, 60)
-        && request.resource.data.name.size() >= 2
-        && request.resource.data.banned == false;
+      allow create: if
+        (isOwner(uid)
+          && textOk(request.resource.data.name, 60)
+          && request.resource.data.name.size() >= 2
+          && request.resource.data.banned == false
+          && request.resource.data.get('isBot', false) == false)
+        // admin-only: seed an AI bot profile
+        || (isAdmin()
+          && uid.matches('bot_[0-9][0-9]')
+          && request.resource.data.isBot == true
+          && request.resource.data.banned == false
+          && textOk(request.resource.data.name, 60)
+          && request.resource.data.name.size() >= 2
+          && textOk(request.resource.data.bio, 500));
       allow update: if
         (isOwner(uid)
-          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['banned'])
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['banned', 'isBot'])
           && textOk(request.resource.data.name, 60)
           && request.resource.data.name.size() >= 2
           && textOk(request.resource.data.bio, 500))
         || (isAdmin()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['banned']));
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['banned']))
+        // admin may edit a bot profile (but cannot turn it into a normal user)
+        || (isAdmin()
+          && resource.data.get('isBot', false) == true
+          && request.resource.data.isBot == true
+          && textOk(request.resource.data.name, 60)
+          && textOk(request.resource.data.bio, 500));
       allow delete: if false;
 
       match /saved/{postId} {
@@ -75,17 +106,19 @@ service cloud.firestore {
         || isAdmin()
       );
 
-      allow create: if notBanned()
-        && request.resource.data.uid == request.auth.uid
-        && textOk(request.resource.data.text, 5000)
-        && request.resource.data.visibility in ['public', 'friends', 'me', 'group']
-        && request.resource.data.audience is list
-        && request.resource.data.audience.size() <= 1500
-        && request.resource.data.reactions == {}
-        && request.resource.data.commentCount == 0
-        && request.resource.data.shareCount == 0
-        && (request.resource.data.groupId == null
-            || request.auth.uid in groupDoc(request.resource.data.groupId).members);
+      allow create: if
+        (notBanned()
+          && request.resource.data.uid == request.auth.uid
+          && validPost(request.resource.data)
+          && (request.resource.data.groupId == null
+              || request.auth.uid in groupDoc(request.resource.data.groupId).members))
+        // admin posting as an AI bot: public, text/photo only, never a video
+        || (isAdmin()
+          && isBotUser(request.resource.data.uid)
+          && validPost(request.resource.data)
+          && request.resource.data.visibility == 'public'
+          && request.resource.data.groupId == null
+          && request.resource.data.videoUrl == '');
 
       // Anyone signed in may only touch: their own key in `reactions`,
       // or a counter by exactly one step.
@@ -103,10 +136,16 @@ service cloud.firestore {
       match /comments/{cid} {
         allow read: if signedIn()
           && canSeePost(get(/databases/$(database)/documents/posts/$(postId)).data);
-        allow create: if notBanned()
-          && request.resource.data.uid == request.auth.uid
-          && textOk(request.resource.data.text, 2000)
-          && canSeePost(get(/databases/$(database)/documents/posts/$(postId)).data);
+        allow create: if
+          (notBanned()
+            && request.resource.data.uid == request.auth.uid
+            && textOk(request.resource.data.text, 2000)
+            && canSeePost(get(/databases/$(database)/documents/posts/$(postId)).data))
+          // admin commenting as an AI bot (public posts only)
+          || (isAdmin()
+            && isBotUser(request.resource.data.uid)
+            && textOk(request.resource.data.text, 2000)
+            && get(/databases/$(database)/documents/posts/$(postId)).data.visibility == 'public');
         allow delete: if isOwner(resource.data.uid)
           || isOwner(get(/databases/$(database)/documents/posts/$(postId)).data.uid)
           || isAdmin();

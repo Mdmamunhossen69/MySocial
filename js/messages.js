@@ -192,6 +192,11 @@ export async function render(view, a, b) {
   if (a === 'with' && b) {
     if (b === me) { navigate('/messages'); return; }
     const other = await getUser(b);
+    if (other.isBot) {
+      toast('AI bots cannot chat. They only share posts.', 'info', 5000);
+      navigate(`/profile/${b}`);
+      return;
+    }
     if ((other.settings?.allowMessages || 'everyone') === 'friends' && !state.friends.has(b)) {
       toast(`${other.name} only accepts messages from friends.`, 'error', 6000);
       navigate(`/profile/${b}`);

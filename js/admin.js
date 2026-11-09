@@ -3,6 +3,7 @@ import {
   db, collection, doc, getDoc, getDocs, updateDoc, deleteDoc, query, where, orderBy, limit, getCountFromServer, serverTimestamp
 } from './firebase.js';
 import { state } from './state.js';
+import { drawBots } from './bots.js';
 import {
   $, $$, esc, avatarHtml, getUser, timeAgo, toast, errMsg, emptyState, errorBox, confirmBox, debounce, linkify
 } from './utils.js';
@@ -17,7 +18,7 @@ export async function render(view) {
     return;
   }
   view.innerHTML = `<h2 class="page-title">Admin dashboard</h2>
-    <div class="tabs"><button class="tab active" data-tab="overview">Overview</button><button class="tab" data-tab="reports">Reports</button><button class="tab" data-tab="users">Users</button></div>
+    <div class="tabs"><button class="tab active" data-tab="overview">Overview</button><button class="tab" data-tab="reports">Reports</button><button class="tab" data-tab="users">Users</button><button class="tab" data-tab="bots">AI Bots</button></div>
     <div data-pane></div>`;
   const pane = $('[data-pane]', view);
   let tab = 'overview';
@@ -33,7 +34,8 @@ export async function render(view) {
     try {
       if (mine === 'overview') await drawOverview();
       else if (mine === 'reports') await drawReports();
-      else await drawUsers();
+      else if (mine === 'users') await drawUsers();
+      else await drawBots(pane);
     } catch (e) { if (tab === mine) pane.innerHTML = errorBox(e); }
   }
 

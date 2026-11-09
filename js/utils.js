@@ -67,6 +67,11 @@ export function avatarHtml(name, photo, size = 40) {
   return `<span class="avatar avatar-initial" style="${style};background:hsl(${hue(n)},55%,45%)">${esc(n.trim().charAt(0).toUpperCase())}</span>`;
 }
 
+// "AI Bot" label shown next to every bot account name.
+export function botBadge(u) {
+  return u && u.isBot ? ' <span class="bot-badge" title="Automated AI bot account">AI Bot</span>' : '';
+}
+
 // ---------- user cache ----------
 const userCache = new Map();
 
@@ -94,6 +99,7 @@ export function invalidateUser(uid) {
 // ---------- notifications ----------
 export async function notify(to, type, extra = {}) {
   if (!state.user || !to || to === state.user.uid) return;
+  if (/^bot_\d\d$/.test(to)) return; // AI bots have no inbox
   try {
     await addDoc(collection(db, 'notifications'), {
       to, type,

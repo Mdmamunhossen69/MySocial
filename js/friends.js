@@ -4,7 +4,7 @@ import {
   onSnapshot, serverTimestamp
 } from './firebase.js';
 import { state, onCleanup, subscribe } from './state.js';
-import { $, $$, esc, avatarHtml, getUser, prefetchUsers, toast, errMsg, notify, emptyState, errorBox, debounce, confirmBox } from './utils.js';
+import { $, $$, esc, avatarHtml, botBadge, getUser, prefetchUsers, toast, errMsg, notify, emptyState, errorBox, debounce, confirmBox } from './utils.js';
 import { pairId } from './utils.js';
 import { icon } from './icons.js';
 
@@ -50,7 +50,7 @@ export async function unfollow(uid) {
 function personRow(u, buttons) {
   return `<div class="person" data-uid="${esc(u.uid)}">
     <a href="#/profile/${esc(u.uid)}">${avatarHtml(u.name, u.photo, 56)}</a>
-    <div class="person-info"><a class="author" href="#/profile/${esc(u.uid)}">${esc(u.name)}</a>
+    <div class="person-info"><a class="author" href="#/profile/${esc(u.uid)}">${esc(u.name)}</a>${botBadge(u)}
       ${u.bio ? `<div class="muted small clamp">${esc(u.bio)}</div>` : ''}</div>
     <div class="row gap">${buttons}</div>
   </div>`;
@@ -127,7 +127,8 @@ export async function render(view) {
         const users = snap.docs.filter((d) => d.id !== me).map((d) => ({ uid: d.id, ...d.data() }));
         results.innerHTML = users.length ? users.map((u) => {
           let btn;
-          if (state.friends.has(u.uid)) btn = `<span class="muted small">Friends</span>`;
+          if (u.isBot) btn = `<a class="btn" href="#/profile/${esc(u.uid)}">View profile</a>`;
+          else if (state.friends.has(u.uid)) btn = `<span class="muted small">Friends</span>`;
           else if (sent.has(u.uid)) btn = `<button class="btn" data-act="cancel">Cancel request</button>`;
           else if (incoming.has(u.uid)) btn = `<button class="btn btn-primary" data-act="accept">Confirm</button>`;
           else btn = `<button class="btn btn-primary" data-act="add">${icon('plus', 16)}Add friend</button>`;

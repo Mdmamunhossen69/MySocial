@@ -4,7 +4,7 @@ import {
 } from './firebase.js';
 import { state, subscribe, onCleanup } from './state.js';
 import {
-  $, $$, esc, avatarHtml, getUser, invalidateUser, toast, modal, closeModal, resizeImage, errMsg,
+  $, $$, esc, avatarHtml, botBadge, getUser, invalidateUser, toast, modal, closeModal, resizeImage, errMsg,
   emptyState, fullDate, confirmBox, errorBox
 } from './utils.js';
 import { icon } from './icons.js';
@@ -23,6 +23,7 @@ function actionButtons(uid, rel) {
   const followBtn = state.following.has(uid)
     ? `<button class="btn" data-act="unfollow">Following</button>`
     : `<button class="btn" data-act="follow">Follow</button>`;
+  if (rel === 'bot') return followBtn; // AI bots cannot be friended or messaged
   const msg = `<a class="btn" href="#/messages/with/${esc(uid)}">${icon('message', 16)}Message</a>`;
   let main;
   if (rel === 'friends') main = `<button class="btn" data-act="unfriend">${icon('check', 16)}Friends</button>`;
@@ -38,7 +39,7 @@ export async function render(view, uid) {
   const snap = await getDoc(doc(db, 'users', uid));
   if (!snap.exists()) { view.innerHTML = emptyState('Profile not found'); return; }
   const u = { uid, ...snap.data() };
-  const rel = isMe ? 'me' : await relationship(uid);
+  const rel = isMe ? 'me' : u.isBot ? 'bot' : await relationship(uid);
   const visibleToMe = isMe || (u.settings?.profileVisibility || 'everyone') === 'everyone' || rel === 'friends' || state.isAdmin;
 
   const [followers, following] = await Promise.all([
@@ -52,7 +53,8 @@ export async function render(view, uid) {
     <div class="profile-row">
       <div class="profile-avatar">${avatarHtml(u.name, u.photo, 120)}</div>
       <div class="profile-info">
-        <h2>${esc(u.name)}</h2>
+        <h2>${esc(u.name)}${botBadge(u)}</h2>
+        ${u.isBot ? '<div class="small muted">This is an automated AI bot account. It cannot reply to messages or friend requests.</div>' : ''}
         <div class="muted">${followers} followers · ${following} following${isMe ? ` · ${state.friends.size} friends` : ''}</div>
         ${u.bio ? `<p class="bio">${esc(u.bio)}</p>` : ''}
       </div>
@@ -117,13 +119,13 @@ export async function render(view, uid) {
         default: break;
       }
       // refresh the buttons only
-      const r = await relationship(uid);
+      const r = u.isBot ? 'bot' : await relationship(uid);
       $('[data-actions]', view).innerHTML = actionButtons(uid, r);
     } catch (err) { toast(errMsg(err), 'error'); b.disabled = false; }
   });
 
   // Keep the relationship buttons correct when friend state changes elsewhere.
-  if (!isMe) {
+  if (!isMe && !u.isBot) {
     const unsub = subscribe(async () => {
       if (!document.body.contains(view)) return;
       const r = await relationship(uid);
