@@ -6,7 +6,7 @@ Website UI text is English. Architecture, data model and free-tier limits: [`doc
 
 ## Features
 
-Accounts (email/password and Google) · profiles with photo, cover and bio · feed with photo and video-link posts · reactions, comments, share, save, report · friends (requests) and follow · private and group chat · 24-hour stories · short video feed (reels) · groups (public/private, join requests) · notifications · privacy settings · light / dark mode · admin dashboard (reports, user suspension) · responsive for Android, tablet, desktop.
+Accounts (email/password and Google) · profiles with photo, cover and bio · feed with photo and video-link posts · reactions, comments, share, save, report · friends (requests) and follow · private and group chat · 24-hour stories · short video feed (reels) · groups (public/private, join requests) · notifications · privacy settings · light / dark mode · admin panel (dashboard, users, staff roles, posts, reports, bots, announcements, maintenance mode, logs) · AI bots · responsive for Android, tablet, desktop.
 
 ## Setup (বাংলা)
 
@@ -19,32 +19,73 @@ Accounts (email/password and Google) · profiles with photo, cover and bio · fe
    - অ্যাপ চালানোর সময় কোনো পেজে index error এলে error-এর লিংকে ক্লিক করলে Firebase নিজেই index তৈরি করে দেয়।
 6. **Authorized domain**: Authentication → Settings → Authorized domains → `mdmamunhossen69.github.io` যোগ করুন।
 7. **GitHub Pages**: রিপোর Settings → Pages → Source: *Deploy from a branch* → `main` / `(root)`।
-8. **অ্যাডমিন বানানো**: ওয়েবসাইটে একটা অ্যাকাউন্ট খুলুন → Firebase Authentication → Users থেকে আপনার UID কপি করুন → Firestore-এ `admins` কালেকশন বানিয়ে ডকুমেন্ট ID হিসেবে সেই UID দিন এবং যেকোনো একটা ফিল্ড দিন (যেমন `enabled: true`)। ফ্রন্টএন্ডে কোনো অ্যাডমিন পাসওয়ার্ড বা সিক্রেট নেই।
+8. **প্রথম Super Admin বানানো**: ওয়েবসাইটে একটা অ্যাকাউন্ট খুলুন → Firebase Authentication → Users থেকে আপনার UID কপি করুন → Firestore-এ `admins` কালেকশন বানিয়ে ডকুমেন্ট ID = সেই UID, ফিল্ড `role` = `super_admin` (লেখা string) দিন। `role` ছাড়া পুরনো ডকুমেন্টও `super_admin` ধরা হয়। এরপর বাকি স্টাফ Admin Panel → **Staff & roles** থেকে যোগ করা যায়। ফ্রন্টএন্ডে কোনো অ্যাডমিন পাসওয়ার্ড বা সিক্রেট নেই, আর rules অনুযায়ী কোনো সাধারণ ইউজার `/admins`-এ লিখতে পারে না।
 
-### AI Bot accounts (২০টি)
+## Admin Panel
 
-* বটরা **Firebase Auth অ্যাকাউন্ট নয়**, শুধু Firestore-এর প্রোফাইল (`users/bot_01` … `bot_20`)। তাই লগইন বা পাসওয়ার্ড নেই। প্রতিটার আলাদা UID, নাম, জেনারেটেড অবতার, bio এবং "AI Bot" ব্যাজ আছে।
-* বটের পোস্ট ও কমেন্ট শুধু **আপনার অ্যাডমিন অ্যাকাউন্ট** দিয়ে হয়, `firestore.rules` সেটা যাচাই করে। বট **কোনো ভিডিও পোস্ট করতে পারে না** (রুলসেও আটকানো), শুধু লেখা ও ছবি। ওয়েবসাইট বা GitHub-এ কোনো অ্যাডমিন credential নেই।
-* ব্যবহার: অ্যাডমিন হিসেবে লগইন → Admin → **AI Bots** ট্যাব → *Create the 20 bots* → তারপর *Run round* (এলোমেলো বট পোস্ট ও কমেন্ট করবে) বা *Post as a bot* / *Comment as a bot*।
-* নতুন রুলস লাগবে: `firestore.rules` আবার Publish করতে হবে।
+খুলতে: লগইন → মেনু → **Admin dashboard** (`#/admin`)। তিনটা রোল:
 
-#### অটোমেটিক পোস্ট ও কমেন্ট (GitHub Actions, ফ্রি)
+| রোল | কী করতে পারে |
+|---|---|
+| Super Admin | সব কিছু: স্টাফ ও রোল, স্থায়ীভাবে অ্যাকাউন্ট ডিলিট (কিউ), server jobs |
+| Admin | ইউজার (block, verified badge, edit), পোস্ট, রিপোর্ট, রিল/গ্রুপ, announcement, বট, global settings, logs |
+| Moderator | রিপোর্ট, পোস্ট hide/restore/delete, রিল ডিলিট, অস্থায়ী suspension |
 
-`.github/workflows/bot-runner.yml` প্রতি ৬ ঘণ্টায় (UTC) `scripts/bot-runner.mjs` চালায়। প্রতি রানে ১-২টা বট-পোস্ট ও ১-৩টা বট-কমেন্ট হয়। বটরা **শুধু অন্য বটের পোস্টে** কমেন্ট করে, আসল ইউজারের পোস্টে নয় (ওটা স্প্যাম মনে হতো)। প্রতিটা বট নিজের সব পোস্ট-আইডিয়া শেষ না করে একই লেখা রিপিট করে না।
+বিভাগ: Dashboard (সংখ্যা + দৈনিক/সাপ্তাহিক/মাসিক চার্ট) · Reports (ইউজার/পোস্ট/কমেন্ট/গ্রুপ/রিল, resolve/dismiss, history) · Users (নাম বা UID দিয়ে সার্চ, block, suspend, verify, activity) · Posts (hide/restore, কমেন্ট বন্ধ/চালু, delete; **approve/reject সিস্টেম নেই**) · Reels & Groups · AI Bots · Announcements · Global settings (maintenance, sign-up) · Activity logs · Staff & roles · Server jobs।
 
-নিরাপত্তা: Firebase Admin key/service account **ব্যবহার হয় না**। একটা আলাদা সাধারণ Auth অ্যাকাউন্ট ("bot runner") দিয়ে লগইন করে, আর Rules অনুযায়ী ওই অ্যাকাউন্ট শুধু বটের হয়ে পোস্ট/কমেন্ট করতে পারে, আসল ইউজারের কিছুতে হাত দিতে পারে না। পাসওয়ার্ড থাকে GitHub Secrets-এ, রিপোতে নয়।
+প্রতিটা স্টাফ অ্যাকশন `adminLogs`-এ লেখা হয়। rules অনুযায়ী লগ কেউ বদলাতে বা মুছতে পারে না।
+
+**গুরুত্বপূর্ণ সীমা (সৎভাবে):**
+* **Hidden পোস্ট** ও **maintenance mode** ওয়েবসাইটের ইন্টারফেসে প্রয়োগ হয়। Firestore rules কোয়েরি ফিল্টার করতে পারে না, তাই প্রযুক্তি জানা কেউ সরাসরি ডেটাবেস কোয়েরি করলে hidden পোস্ট দেখতে পারবে। সম্পূর্ণ আটকাতে হলে পোস্ট ডিলিট করুন।
+* সাইন-আপ বন্ধ করাও শুধু সাইন-আপ ফর্মে। পুরোপুরি বন্ধ করতে Firebase Authentication সেটিংস ব্যবহার করুন।
+* Marketplace ও Pages এই অ্যাপে আগে থেকেই নেই, তাই Admin Panel-এও নেই।
+* অ্যাকাউন্ট ডিলিটের সময় ওই ইউজারের **অন্যের পোস্টে করা কমেন্ট** থেকে যায় (খুঁজতে আলাদা collection-group index লাগত)। এই অ্যাপ Cloud Storage ব্যবহার করে না, ছবি Firestore-এর ভেতরে থাকে।
+
+## Server jobs (GitHub Actions, ফ্রি)
+
+ব্রাউজারে Admin SDK key রাখা যায় না, তাই স্থায়ী ডিলিট ও ব্যাকআপ GitHub Actions-এ হয়। এক্ষেত্রে একটা Google **service account** লাগে। এটা ফ্রি (Blaze লাগে না)। key শুধু GitHub Secret-এ থাকে, রিপোতে বা ওয়েবসাইটে কখনো নয়।
+
+1. Firebase console → Project settings → **Service accounts** → *Generate new private key* → JSON ফাইল নামান (**কাউকে দেবেন না, রিপোতে তুলবেন না**)।
+2. GitHub রিপো → Settings → Secrets and variables → Actions → New repository secret:
+   * `FIREBASE_SERVICE_ACCOUNT` = ওই JSON ফাইলের **পুরো লেখা**
+   * `BACKUP_PASSPHRASE` = কমপক্ষে ১২ অক্ষরের একটা পাসওয়ার্ড (ব্যাকআপ এনক্রিপ্ট করার জন্য, হারালে ব্যাকআপ খোলা যাবে না)
+3. ফাইল মুছে ফেলুন।
+
+| Workflow | কী করে | কখন |
+|---|---|---|
+| `Account deletion queue` | Super Admin যে অ্যাকাউন্ট কিউ করেছে সেটার Auth user ও ডেটা মোছে | প্রতি ~৩০ মিনিটে |
+| `Weekly encrypted backup` | সব কালেকশনের JSON ব্যাকআপ, **এনক্রিপ্ট করে** workflow artifact (৩০ দিন) | প্রতি রবিবার, বা হাতে চালিয়ে |
+
+ব্যাকআপ এনক্রিপ্ট না করলে পাবলিক রিপোর artifact যেকোনো GitHub ইউজার নামাতে পারত, তাই পাসওয়ার্ড ছাড়া job চলেই না। খুলতে: `BACKUP_PASSPHRASE=... node scripts/backup-decrypt.mjs ফাইল.enc out.json`। ব্যাকআপে বড় এম্বেডেড ছবি বাদ থাকে। GitHub scheduled job দেরিতে চলতে পারে, তাই ডিলিট "প্রায় সাথে সাথে" নয়।
+
+### AI Bot accounts
+
+* বট **Firebase Auth অ্যাকাউন্ট নয়**, শুধু Firestore প্রোফাইল (`users/bot_01` … `bot_30`)। লগইন বা পাসওয়ার্ড নেই। সব জায়গায় **"AI Bot"** ব্যাজ দেখায়, বায়োতে সবসময় লেখা থাকে এটা এআই বট।
+* ২৩টা বিল্ট-ইন বট (৯টা personality: Friendly, Funny, Helpful, Tech, Sports, Photography, Travel, Gaming, News Discussion)। Admin → **AI Bots** থেকে নতুন বট তৈরি, এডিট (নাম, username, bio, personality, ভাষা, interests, avatar/cover), মুছে ফেলা, চালু/বন্ধ, Auto post / comment / reaction / chat সুইচ, দৈনিক লিমিট, প্রতি বটের activity log এবং সব বটের একসাথে ON/OFF করা যায়।
+* **টেক্সট আসে তৈরি টেমপ্লেট থেকে** (বাংলা ও ইংরেজি), কোনো AI মডেল দিয়ে নয়। তাই কথোপকথন সহজ ও সীমিত, ভুলও হতে পারে। পোস্ট/মেসেজের **লেখা** (কীওয়ার্ড) দেখে বিষয় বোঝে। **ছবির ভেতরের জিনিস চেনে না**, শুধু ক্যাপশন পড়ে।
+* ডুপ্লিকেট কমেন্ট আটকানো হয়। মৃত্যু, অসুস্থতা, কষ্টের মতো সংবেদনশীল পোস্টে বট চুপ থাকে। কেউ নিজের ক্ষতির কথা লিখলে বট জানায় সে এআই এবং আসল মানুষ বা হেল্পলাইনে যোগাযোগ করতে বলে।
+* **সম্মতি ছাড়া এনগেজমেন্ট নেই:** বট শুধু সেই ইউজারের পোস্টে কমেন্ট/রিঅ্যাক্ট করে যিনি Settings → *AI bots on my posts* চালু করেছেন (ডিফল্ট বন্ধ)। প্রতি পোস্টে সর্বোচ্চ ১টা বট, ১টা কমেন্ট ও ১টা রিঅ্যাকশন। বটের রিঅ্যাকশন **"🤖 N AI"** নামে আলাদা দেখায়, মানুষের সংখ্যায় ধরা হয় না।
+* **বট-টু-বট কমেন্ট ডিফল্টে বন্ধ** (ভুয়া জনপ্রিয়তার মতো দেখায়)। Global settings থেকে চালু করা যায়।
+* বটের সাথে চ্যাট: ইউজার প্রোফাইল থেকে *Chat with AI*। উত্তর **তাৎক্ষণিক নয়**, প্রতি ~২০ মিনিটের scheduled job দেয় (GitHub দেরি করতে পারে)।
+
+#### অটোমেটিক কাজ (GitHub Actions, ফ্রি)
+
+* `AI bot activity` প্রতি ৬ ঘণ্টায়: নতুন পোস্ট + (সম্মতি দেওয়া ইউজারের পোস্টে) এনগেজমেন্ট।
+* `AI bot chat replies` প্রতি ~২০ মিনিটে: বটকে পাঠানো মেসেজের উত্তর (নতুন মেসেজ না থাকলে সাথে সাথে বেরিয়ে যায়)।
+* সব বটের কাজ `botLogs`-এ লেখা হয়। প্রতি বটের `dailyLimit` মানা হয়।
+
+নিরাপত্তা: Admin SDK key বট-রানারে ব্যবহার হয় না। একটা আলাদা সাধারণ Auth অ্যাকাউন্ট ("bot runner") দিয়ে লগইন করে, আর Rules অনুযায়ী ওই অ্যাকাউন্ট শুধু বটের হয়ে কাজ করতে পারে (পাবলিক পোস্ট, ভিডিও কখনো নয়, কমেন্ট, বটের নিজের key-তে রিঅ্যাকশন, চ্যাট উত্তর)।
 
 চালু করার ধাপ (একবারই):
-1. `firestore.rules` আবার Publish করুন।
-2. Firebase → Authentication → Users → **Add user**: একটা নতুন ইমেইল (যেমন `botrunner@yourmail.com`, আসল ইনবক্স না লাগলেও চলে) ও লম্বা পাসওয়ার্ড দিন। এই অ্যাকাউন্টের **UID** কপি করুন।
-3. Firestore → `botRunners` কালেকশন → ডকুমেন্ট ID = ওই UID, একটা ফিল্ড `enabled` = `true`।
-4. সাইটে অ্যাডমিন হিসেবে Admin → AI Bots → **Create the 20 bots** (একবার)।
-5. GitHub রিপো → Settings → Secrets and variables → Actions → **New repository secret**: `BOT_RUNNER_EMAIL` ও `BOT_RUNNER_PASSWORD`।
-6. রিপো → Actions ট্যাব → *AI bot activity* → **Run workflow** দিয়ে একবার হাতে চালিয়ে দেখুন। এরপর নিজে থেকেই চলবে।
+1. `firestore.rules` Publish করুন (Firebase console এখানেই সিনট্যাক্স ভুল ধরিয়ে দেবে)।
+2. Firebase → Authentication → Users → **Add user**: একটা নতুন ইমেইল ও লম্বা পাসওয়ার্ড। এই অ্যাকাউন্টের **UID** কপি করুন।
+3. Firestore → `botRunners` কালেকশন → ডকুমেন্ট ID = ওই UID, ফিল্ড `enabled` = `true`।
+4. Admin → AI Bots → **Create missing built-in bots** (একবার)।
+5. GitHub Secrets: `BOT_RUNNER_EMAIL`, `BOT_RUNNER_PASSWORD`।
+6. Actions ট্যাব → *AI bot activity* → **Run workflow** দিয়ে একবার হাতে চালান।
+7. Firestore-এ নতুন index লাগবে (প্রতি বটের activity log): প্রথমবার *Activity* বাটনে চাপলে error-এর লিংক থেকে এক ক্লিকে তৈরি হয়, বা `firebase deploy --only firestore:indexes`।
 
-বন্ধ করতে: Secret মুছুন, বা Actions-এ workflow *Disable* করুন, বা Firestore থেকে `botRunners` ডকুমেন্ট মুছুন।
-
-সীমা: পোস্টের আইডিয়া মোট ৮০টা (প্রতি বটের ৪টা), শেষ হলে আবার প্রথম থেকে ঘোরে। আরও আইডিয়া `js/bots-data.js`-এ যোগ করা যায়। সময়সূচি বদলাতে workflow-এর `cron` লাইন এডিট করুন। GitHub পাবলিক রিপোতে ৬০ দিন কোনো কমিট না হলে scheduled workflow নিজে থেকে বন্ধ করে দেয়, তখন Actions ট্যাব থেকে আবার Enable করতে হয়।
+বন্ধ করতে: Admin → AI Bots → *Turn all bots OFF*, বা Secret মুছুন, বা Actions-এ workflow *Disable* করুন। GitHub পাবলিক রিপোতে ৬০ দিন কোনো কমিট না হলে scheduled workflow নিজে বন্ধ করে দেয়, তখন Actions ট্যাব থেকে আবার Enable করতে হয়।
 
 ### Optional
 
@@ -72,6 +113,18 @@ python3 -m http.server 8000
 
 ## Testing status (honest)
 
-Tested here: সব JS ফাইল syntax ও import মিলিয়ে দেখা হয়েছে; headless Chromium-এ লগইন-আগে ও লগইন-পরে সব পেজ (feed, friends, messages, reels, groups, notifications, settings, profile, saved, admin) **নকল Firebase** দিয়ে রেন্ডার করে দেখা হয়েছে, কোনো JS error আসেনি; ডার্ক মোড টগল ও মোবাইল/ডেস্কটপ লেআউট দেখা হয়েছে।
+চালানো যায়:
 
-**Not tested:** আসল Firebase-এর বিরুদ্ধে কিছুই চালানো হয়নি, কারণ এই পরিবেশে Firebase প্রজেক্ট নেই। অর্থাৎ আসল sign-up/login, Firestore queries, composite indexes এবং **`firestore.rules`** এখনো যাচাই হয়নি। রুলস পাবলিশ করার পরে Firebase console-এর *Rules Playground* বা Firebase Emulator দিয়ে পরীক্ষা করুন, এবং প্রথমে দুটো টেস্ট অ্যাকাউন্ট দিয়ে পোস্ট, বন্ধু, চ্যাট, গ্রুপ ঘুরে দেখুন। কিছু ভাঙলে error-এর মেসেজ আমাকে দিন, ঠিক করে দেব।
+```bash
+node --test tests/*.test.mjs                 # বট-রানার, অ্যাকাউন্ট ডিলিট, এনক্রিপ্টেড ব্যাকআপ (নকল Firestore সার্ভারের বিরুদ্ধে)
+python3 tests/check-imports.py .   # সব import ঠিক আছে কি না
+python3 tests/admin-smoke.py .     # হেডলেস Chromium-এ Admin Panel ও ইউজার-সাইড ফিচার (নকল Firebase দিয়ে; playwright লাগে)
+```
+
+**পরীক্ষা হয়েছে:** উপরের তিনটা টেস্ট পাস করেছে। এতে দেখা হয়েছে: সব Admin বিভাগ রেন্ডার হয়, রোল অনুযায়ী মেনু বদলায়, block/suspend/verify/hide/settings/staff/announcement/বট-এডিট সঠিক ডেটা লেখে, সম্মতি ছাড়া বট কিছু করে না, সংবেদনশীল পোস্টে চুপ থাকে, ডিলিট জব ডেটা মোছে কিন্তু স্টাফ ও বট ফেরত দেয়, ব্যাকআপ পাসওয়ার্ড ছাড়া খোলে না।
+
+**পরীক্ষা হয়নি (আপনাকে করতে হবে):** আসল Firebase-এর বিরুদ্ধে কিছুই চালানো হয়নি। অর্থাৎ **`firestore.rules` কম্পাইল বা পরীক্ষা করা হয়নি**, আসল Auth, Firestore index, আসল GitHub Actions run, আর service-account দিয়ে আসল ডিলিট/ব্যাকআপ যাচাই হয়নি। রুলস Publish করলে Firebase console সিনট্যাক্স ভুল সাথে সাথে দেখাবে। তারপর *Rules Playground* বা Firebase Emulator দিয়ে পরীক্ষা করুন এবং দুটো টেস্ট অ্যাকাউন্ট (একটা সাধারণ, একটা moderator) দিয়ে ঘুরে দেখুন। কিছু ভাঙলে error-এর মেসেজ দিন, ঠিক করে দেব।
+
+## পরবর্তী ফিচার পরিকল্পনা
+
+Stories & Highlights · Advanced Messenger · Trending & Hashtags · Two-Factor Authentication · Saved Posts (আংশিক আছে) · বাংলা ও ইংরেজি ইন্টারফেস · Creator Dashboard · Marketplace · Polls & Quiz · Post Insights · Privacy Center · Login & Device History। এগুলো এখনো বানানো হয়নি।

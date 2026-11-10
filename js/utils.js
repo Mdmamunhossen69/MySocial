@@ -67,10 +67,15 @@ export function avatarHtml(name, photo, size = 40) {
   return `<span class="avatar avatar-initial" style="${style};background:hsl(${hue(n)},55%,45%)">${esc(n.trim().charAt(0).toUpperCase())}</span>`;
 }
 
-// "AI Bot" label shown next to every bot account name.
+// Badges shown next to an account name: "AI Bot" for bots, a blue check for verified accounts.
+// (Name kept for the many existing call sites.)
 export function botBadge(u) {
-  return u && u.isBot ? ' <span class="bot-badge" title="Automated AI bot account">AI Bot</span>' : '';
+  if (!u) return '';
+  return (u.isBot ? ' <span class="bot-badge" title="Automated AI bot account">AI Bot</span>' : '')
+    + (u.verified ? ' <span class="verified-badge" title="Verified account" aria-label="Verified account">✔</span>' : '');
 }
+export const isSuspended = (p) => !!(p && p.suspendedUntil && tsMs(p.suspendedUntil) > Date.now());
+export const fmtDate = (t) => (t ? new Date(tsMs(t)).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 
 // ---------- user cache ----------
 const userCache = new Map();

@@ -1,12 +1,12 @@
 // App entry: session lifecycle, global listeners, shell (header / sidebars), router.
 import {
   configured, auth, db, onAuthStateChanged, signOut, doc, getDoc, collection, query, where,
-  orderBy, limit, onSnapshot, getDocs
+  orderBy, limit, onSnapshot, getDocs, updateDoc, serverTimestamp
 } from './firebase.js';
 import { state, runCleanups, subscribe, emit } from './state.js';
 import {
   $, $$, esc, avatarHtml, debounce, errorBox, closeModal, getUser, tsMs, toast,
-  isIndexError, indexLinkFrom, showIndexNotice, botBadge
+  isIndexError, indexLinkFrom, showIndexNotice, botBadge, isSuspended, fmtDate
 } from './utils.js';
 import { icon } from './icons.js';
 import { toggleTheme, effectiveTheme } from './theme.js';
@@ -19,7 +19,7 @@ import * as reels from './reels.js';
 import * as groups from './groups.js';
 import * as notifications from './notifications.js';
 import * as settings from './settings.js';
-import * as admin from './admin.js';
+import * as admin from './admin/index.js';
 
 const root = document.getElementById('app');
 let unsubShell = null;
@@ -30,7 +30,7 @@ function stopSession() {
   for (const u of state.globalUnsubs.splice(0)) { try { u(); } catch { /* ignore */ } }
   if (unsubShell) { unsubShell(); unsubShell = null; }
   Object.assign(state, {
-    user: null, profile: null, isAdmin: false, friends: new Set(), following: new Set(),
+    user: null, profile: null, isAdmin: false, adminRole: null, site: {}, announcements: [], friends: new Set(), following: new Set(),
     saved: new Set(), incomingRequests: [], unreadNotifs: 0, unreadChats: 0, chats: []
   });
 }
@@ -52,15 +52,30 @@ async function startSession(user, profileData) {
 
   try {
     const a = await getDoc(doc(db, 'admins', uid));
+    // a staff doc without a role (created by hand, older setup) counts as super_admin
+    state.adminRole = a.exists() ? (a.data().role || 'super_admin') : null;
     state.isAdmin = a.exists();
-  } catch { state.isAdmin = false; }
+  } catch { state.adminRole = null; state.isAdmin = false; }
+
+  // "last active" for the admin dashboard, written at most once an hour
+  const last = profileData.lastActiveAt ? tsMs(profileData.lastActiveAt) : 0;
+  if (Date.now() - last > 3600 * 1000) updateDoc(doc(db, 'users', uid), { lastActiveAt: serverTimestamp() }).catch(() => {});
 
   listen(doc(db, 'users', uid), (s) => {
     if (!s.exists()) return;
     state.profile = s.data();
-    if (state.profile.banned) { signOut(auth); return; }
+    if (state.profile.banned || isSuspended(state.profile)) { signOut(auth); return; }
     emit();
   }, 'profile');
+
+  // site-wide switches (maintenance mode) and announcements, both set from the Admin panel
+  listen(doc(db, 'settings', 'global'), (s) => { state.site = s.exists() ? s.data() : {}; applySite(); emit(); }, 'site');
+  listen(query(collection(db, 'announcements'), where('active', '==', true), limit(5)), (snap) => {
+    state.announcements = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      .filter((a) => !a.expiresAt || tsMs(a.expiresAt) > Date.now())
+      .sort((x, y) => tsMs(y.createdAt) - tsMs(x.createdAt));
+    emit();
+  }, 'announcements');
 
   listen(query(collection(db, 'friendships'), where('members', 'array-contains', uid)), (snap) => {
     state.friends = new Set(snap.docs.map((d) => d.data().members.find((m) => m !== uid)));
@@ -98,6 +113,35 @@ async function startSession(user, profileData) {
   }, 'chats');
 }
 
+// ---------------------------------------------------------------- maintenance mode + announcements
+// NOTE: maintenance mode is enforced by this app's interface only. Firestore rules cannot switch the whole
+// database off for non-staff without an extra read on every request, so a technical user could bypass it.
+let maintenanceOn = false;
+function applySite() {
+  if (!state.user) return;
+  const blocked = state.site.maintenance === true && !state.isAdmin;
+  if (blocked && !maintenanceOn) {
+    maintenanceOn = true;
+    root.innerHTML = `<div class="auth-page maintenance"><div class="card auth-card"><h2>We'll be right back</h2>
+      <p>${esc(state.site.maintenanceMessage || 'MySocial is down for maintenance. Please try again soon.')}</p>
+      <button class="btn btn-block" id="mt-out">Sign out</button></div></div>`;
+    $('#mt-out').addEventListener('click', () => signOut(auth));
+  } else if (!blocked && maintenanceOn) {
+    location.reload();
+  }
+}
+
+const dismissedKey = 'mysocial-dismissed-announcements';
+const getDismissed = () => { try { return JSON.parse(sessionStorage.getItem(dismissedKey) || '[]'); } catch { return []; } };
+function drawAnnouncements() {
+  const bar = $('#announce-bar');
+  if (!bar) return;
+  const hidden = getDismissed();
+  bar.innerHTML = state.announcements.filter((a) => !hidden.includes(a.id)).map((a) =>
+    `<div class="announce announce-${a.level === 'warning' ? 'warning' : 'info'}" role="status"><span>${esc(a.text)}</span>
+      <button class="icon-btn" data-dismiss-ann="${esc(a.id)}" aria-label="Dismiss announcement">${icon('x', 16)}</button></div>`).join('');
+}
+
 // ---------------------------------------------------------------- shell
 const NAV = [
   ['feed', 'home', 'Home'],
@@ -127,6 +171,7 @@ function renderShell() {
       <div class="menu" id="me-menu" hidden></div>
     </div>
   </header>
+  <div id="announce-bar"></div>
   <div class="layout">
     <aside class="left" id="left"></aside>
     <main id="main" class="main"></main>
@@ -141,6 +186,13 @@ function renderShell() {
     if (!b) return;
     if (b.dataset.act === 'logout') { await signOut(auth); }
     $('#me-menu').hidden = true;
+  });
+
+  $('#announce-bar').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-dismiss-ann]');
+    if (!b) return;
+    try { sessionStorage.setItem(dismissedKey, JSON.stringify([...getDismissed(), b.dataset.dismissAnn])); } catch { /* ignore */ }
+    drawAnnouncements();
   });
 
   const input = $('#search-input');
@@ -191,6 +243,7 @@ function refreshChrome() {
     <a class="side-item" href="#/settings">${icon('settings', 22)}<span>Settings</span></a>
     ${state.isAdmin ? `<a class="side-item" href="#/admin">${icon('shield', 22)}<span>Admin</span></a>` : ''}`;
 
+  drawAnnouncements();
   renderRight();
 }
 
@@ -268,7 +321,7 @@ async function route() {
       case 'group': await groups.renderGroup(view, a); break;
       case 'notifications': await notifications.render(view); break;
       case 'settings': await settings.render(view); break;
-      case 'admin': await admin.render(view); break;
+      case 'admin': await admin.render(view, a); break;
       default: location.hash = '#/feed';
     }
   } catch (e) {
@@ -286,6 +339,7 @@ function boot() {
   onAuthStateChanged(auth, async (user) => {
     if (!user) {
       document.removeEventListener('click', onDocClick);
+      maintenanceOn = false;
       stopSession();
       renderAuth(root);
       return;
@@ -293,14 +347,15 @@ function boot() {
     root.innerHTML = '<div class="splash">MySocial</div>';
     try {
       const data = await ensureProfile(user);
-      if (data.banned) {
+      if (data.banned || isSuspended(data)) {
         await signOut(auth);
-        renderAuth(root, { bannedMessage: 'This account has been suspended by an administrator.' });
+        renderAuth(root, { bannedMessage: data.banned ? 'This account has been blocked by an administrator.' : `This account is suspended until ${fmtDate(data.suspendedUntil)}.` });
         return;
       }
       await startSession(user, data);
       renderShell();
-      await route();
+      applySite();
+      if (!maintenanceOn) await route();
     } catch (e) {
       console.error(e);
       root.innerHTML = `<div class="auth-page"><div class="card auth-card">${errorBox(e)}<button class="btn btn-block" id="retry-signout">Sign out</button></div></div>`;

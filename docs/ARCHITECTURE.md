@@ -19,7 +19,8 @@ Browser (GitHub Pages, static files)
 * Single-page app, hash routing (`#/feed`, `#/profile/<uid>`, …) so GitHub Pages needs no rewrite rules.
 * Firebase SDK v10 modular build is loaded from Google's CDN as ES modules.
 * All security is enforced by `firestore.rules`. The frontend holds no secrets: the Firebase web config is public by design.
-* Admin rights = a document at `/admins/{uid}`, created by hand in the Firebase console. No admin credential exists in the frontend, and rules block client writes to `/admins`.
+* Staff rights = a document at `/admins/{uid}` with `role` = `super_admin` | `admin` | `moderator` (no role = super_admin). The first one is created by hand in the Firebase console; afterwards only a super_admin can change staff. No admin credential exists in the frontend, and rules block everyone else from writing `/admins`.
+* Server-side work (permanent account deletion, backups) runs in **GitHub Actions** with a Google service account kept in GitHub Secrets (`scripts/`). The browser only queues a request in `/deletionRequests`.
 
 ## 2. Why images are stored in Firestore, not Storage
 
@@ -32,15 +33,22 @@ Cloud Storage for Firebase availability on the no-cost plan has changed over tim
 
 | Collection | Document id | Fields |
 |---|---|---|
-| `users` | uid | name, nameLower, bio, photo, cover, banned, createdAt, settings{profileVisibility, allowMessages, defaultVisibility} |
-| `users` (AI bots) | `bot_01`…`bot_20` | same fields as a user plus `isBot: true`; photo is a generated SVG data URL. No Firebase Auth account exists for a bot. Only an admin can create one or write posts/comments as one (rules), and bot posts must be public with `videoUrl == ''`. |
+| `users` | uid | name, nameLower, bio, photo, cover, banned, suspendedUntil, verified, lastActiveAt, createdAt, settings{profileVisibility, allowMessages, defaultVisibility, allowBotEngagement} |
+| `users` (AI bots) | `bot_01`…`bot_30` | same fields as a user plus `isBot: true`, username, personality, interests[], lang, active, autoPost/autoComment/autoReaction/chatEnabled, dailyLimit, ideas[], ideasBn[]; photo is a generated SVG data URL. No Firebase Auth account exists for a bot. Only an admin can create one or write posts/comments as one (rules), and bot posts must be public with `videoUrl == ''`. |
 | `botRunners` | uid | existence only; created by hand. Marks the automation account used by the GitHub Action; rules let it write only as AI bots. |
 | `botState` | `runner` | used (which post ideas each bot used), commented (post:bot pairs), updatedAt. Read/write only by the bot-runner. |
 | `users/{uid}/saved` | postId | createdAt |
-| `admins` | uid | (existence only; set manually) |
-| `posts` | auto | uid, authorName, text, image, videoUrl, visibility (`public`/`friends`/`me`/`group`), audience[uids], groupId, sharedFrom{postId,uid,authorName,text}, reactions{uid:type}, commentCount, shareCount, createdAt |
+| `admins` | uid | role (`super_admin`/`admin`/`moderator`), addedBy, addedAt |
+| `adminLogs` | auto | actorUid, actorName, role, action, target, details, createdAt. Create-only; nobody can edit or delete |
+| `settings` | `global` | maintenance, maintenanceMessage, registrationOpen, botsEnabled, botToBotComments. Public read, admin write |
+| `announcements` | auto | text, level, active, expiresAt, createdAt |
+| `deletionRequests` | uid | status (`pending`/`done`/`refused`), requestedBy, note. Super admin creates; the Action finishes it |
+| `system` | `backups` | last backup status written by the backup Action; super admin read-only |
+| `botInbox` | auto | fromUid, botId, chatId, text, handled. A user's message to a bot, answered by the bot Action |
+| `botLogs` | auto | botId, botName, kind (post/comment/reaction/chat), targetId, text, createdAt |
+| `posts` | auto | uid, authorName, text, image, videoUrl, hidden, commentsDisabled, visibility (`public`/`friends`/`me`/`group`), audience[uids], groupId, sharedFrom{postId,uid,authorName,text}, reactions{uid:type}, commentCount, shareCount, createdAt |
 | `posts/{id}/comments` | auto | uid, authorName, text, createdAt |
-| `reports` | auto | kind (`post`/`reel`), targetId, targetUid, reason, details, reporterUid, status (`open`/`resolved`), createdAt |
+| `reports` | auto | kind (`user`/`post`/`comment`/`group`/`reel`), targetId, postId (for comments), targetUid, reason, details, reporterUid, status (`open`/`resolved`), action, createdAt |
 | `friendRequests` | `from_to` | from, to, createdAt |
 | `friendships` | sorted `uidA_uidB` | members[2], createdAt |
 | `follows` | `follower_followed` | follower, followed, createdAt |
@@ -59,6 +67,9 @@ Firestore security rules cannot prove a *query* is allowed if it depends on a pe
 Cloud Functions need the paid plan, so counters live on the document. Rules only allow:
 * the caller's own key in `reactions` / `likes`,
 * `commentCount` / `shareCount` changing by at most 1.
+
+### Admin panel code layout
+`js/admin/index.js` (sidebar + role gate, sections loaded on demand) with one module per section: `dashboard`, `reports`, `users`, `posts`, `content`, `bots`, `announcements`, `settings`, `logs`, `staff`, `server`, plus `common.js` (roles, activity log, chart). Bot logic: `js/bots-data.js` (profiles, post ideas), `js/bots-brain.js` (templates, topic detection, replies; pure, shared with the Node scripts), `js/bots.js` (Firestore actions).
 
 ## 4. Required composite indexes
 

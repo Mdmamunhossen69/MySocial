@@ -9,7 +9,8 @@ import { esc, $, toast } from './utils.js';
 export const DEFAULT_SETTINGS = {
   profileVisibility: 'everyone', // everyone | friends
   allowMessages: 'everyone',     // everyone | friends
-  defaultVisibility: 'public'    // public | friends | me
+  defaultVisibility: 'public',   // public | friends | me
+  allowBotEngagement: false      // true = AI bots may react / comment on my posts (always labelled AI)
 };
 
 // Name typed in the sign-up form; read by ensureProfile because Firebase signs the user in
@@ -56,7 +57,8 @@ function friendlyAuthError(e) {
     'auth/too-many-requests': 'Too many attempts. Please try again later.',
     'auth/popup-closed-by-user': 'Sign-in was cancelled.',
     'auth/operation-not-allowed': 'This sign-in method is not enabled in Firebase Authentication.',
-    'auth/network-request-failed': 'Network error. Check your connection.'
+    'auth/network-request-failed': 'Network error. Check your connection.',
+    'app/registration-closed': 'New sign-ups are closed right now. Please try again later.'
   };
   return map[e && e.code] || (e && e.message) || 'Something went wrong.';
 }
@@ -125,6 +127,9 @@ export function renderAuth(root, { bannedMessage } = {}) {
     submit.disabled = true;
     try {
       if (mode === 'register') {
+        // Admin can close sign-ups. Enforced by this interface only (Firebase Auth sign-up is client-side).
+        const site = await getDoc(doc(db, 'settings', 'global')).then((s) => (s.exists() ? s.data() : {})).catch(() => ({}));
+        if (site.registrationOpen === false) throw Object.assign(new Error('closed'), { code: 'app/registration-closed' });
         reg.name = name;
         const cred = await createUserWithEmailAndPassword(auth, email, pass);
         await updateProfile(cred.user, { displayName: name });

@@ -10,6 +10,7 @@ import {
 } from './utils.js';
 import { icon } from './icons.js';
 import { renderStories } from './stories.js';
+import { isBotId } from './bots-data.js';
 
 const PAGE = 20;
 
@@ -66,6 +67,7 @@ export async function toggleSave(postId) {
 export async function reportContent(kind, target, reason, details) {
   await addDoc(collection(db, 'reports'), {
     kind, targetId: target.id, targetUid: target.uid || null,
+    postId: target.postId || null,
     reason, details: details.slice(0, 1000),
     reporterUid: state.user.uid, status: 'open', createdAt: serverTimestamp()
   });
@@ -73,13 +75,19 @@ export async function reportContent(kind, target, reason, details) {
 
 // ------------------------------------------------------------------ rendering
 function reactionSummary(post) {
-  const r = post.reactions || {};
-  const vals = Object.values(r);
-  if (!vals.length) return '';
-  const counts = {};
-  vals.forEach((t) => { counts[t] = (counts[t] || 0) + 1; });
-  const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([t]) => REACTIONS[t]?.emoji || '').join('');
-  return `<span class="react-summary">${top} ${vals.length}</span>`;
+  // Reactions from AI bots are shown separately and never counted as people's reactions.
+  const entries = Object.entries(post.reactions || {});
+  const vals = entries.filter(([k]) => !isBotId(k)).map(([, t]) => t);
+  const bots = entries.length - vals.length;
+  let out = '';
+  if (vals.length) {
+    const counts = {};
+    vals.forEach((t) => { counts[t] = (counts[t] || 0) + 1; });
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([t]) => REACTIONS[t]?.emoji || '').join('');
+    out += `<span class="react-summary">${top} ${vals.length}</span>`;
+  }
+  if (bots) out += ` <span class="react-summary ai" title="Reactions from labelled AI bots. Not counted as people.">🤖 ${bots} AI</span>`;
+  return out;
 }
 
 function mediaHtml(post) {
@@ -90,6 +98,8 @@ function mediaHtml(post) {
 }
 
 export function postHtml(post, users, { detail = false } = {}) {
+  // Hidden by staff: only staff still see it (this is applied by the interface, see README).
+  if (post.hidden && !state.isAdmin) return '';
   const author = users[post.uid] || { name: post.authorName };
   const uid = state.user.uid;
   const mine = post.uid === uid;
@@ -102,7 +112,7 @@ export function postHtml(post, users, { detail = false } = {}) {
     <header class="post-head">
       <a href="#/profile/${esc(post.uid)}">${avatarHtml(author.name, author.photo, 40)}</a>
       <div class="post-meta">
-        <a class="author" href="#/profile/${esc(post.uid)}">${esc(author.name)}</a>${botBadge(author)}
+        <a class="author" href="#/profile/${esc(post.uid)}">${esc(author.name)}</a>${botBadge(author)}${post.hidden ? ' <span class="tag danger" title="Hidden from everyone except staff">Hidden</span>' : ''}
         <a class="muted small" href="#/post/${esc(post.id)}" title="${esc(fullDate(post.createdAt))}">${timeAgo(post.createdAt)}</a>
         <span class="muted small" title="${visLabel}">${icon(visIcon, 12)}</span>
       </div>
@@ -226,10 +236,10 @@ async function copyText(text) {
 function commentHtml(c, post, users) {
   const a = users[c.uid] || { name: c.authorName };
   const can = c.uid === state.user.uid || post.uid === state.user.uid || state.isAdmin;
-  return `<div class="comment" data-cid="${esc(c.id)}">
+  return `<div class="comment" data-cid="${esc(c.id)}" data-uid="${esc(c.uid)}">
     <a href="#/profile/${esc(c.uid)}">${avatarHtml(a.name, a.photo, 32)}</a>
     <div class="bubble"><a class="author" href="#/profile/${esc(c.uid)}">${esc(a.name)}</a>${botBadge(a)}<div>${linkify(c.text)}</div>
-      <div class="small muted">${timeAgo(c.createdAt)}${can ? ` · <button class="link-btn danger-text" data-del-comment>Delete</button>` : ''}</div></div>
+      <div class="small muted">${timeAgo(c.createdAt)}${c.uid !== state.user.uid ? ` · <button class="link-btn" data-report-comment>Report</button>` : ''}${can ? ` · <button class="link-btn danger-text" data-del-comment>Delete</button>` : ''}</div></div>
   </div>`;
 }
 
@@ -238,11 +248,11 @@ function toggleComments(card, post) {
   if (!box.hidden) { box.hidden = true; if (box._unsub) { box._unsub(); box._unsub = null; } return; }
   box.hidden = false;
   box.innerHTML = `<div class="comment-list" data-list><div class="muted small">Loading comments…</div></div>
-    <form class="comment-form" data-form>
+    ${post.commentsDisabled ? '<div class="muted small comments-off">Comments are turned off for this post.</div>' : `<form class="comment-form" data-form>
       ${avatarHtml(state.profile.name, state.profile.photo, 32)}
       <input type="text" maxlength="2000" placeholder="Write a comment…" aria-label="Write a comment" required>
       <button class="icon-btn primary" type="submit" aria-label="Send comment">${icon('send')}</button>
-    </form>`;
+    </form>`}`;
   const list = $('[data-list]', box);
   const q = query(collection(db, 'posts', post.id, 'comments'), orderBy('createdAt', 'asc'), limit(100));
   const unsub = onSnapshot(q, async (snap) => {
@@ -255,7 +265,8 @@ function toggleComments(card, post) {
   box._unsub = unsub;
   onCleanup(unsub);
 
-  $('[data-form]', box).addEventListener('submit', async (e) => {
+  const form = $('[data-form]', box);
+  if (form) form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const input = e.target.querySelector('input');
     const text = input.value.trim();
@@ -275,6 +286,8 @@ function toggleComments(card, post) {
   });
 
   list.addEventListener('click', async (e) => {
+    const rep = e.target.closest('[data-report-comment]');
+    if (rep) { const c = rep.closest('.comment'); openReport('comment', { id: c.dataset.cid, uid: c.dataset.uid, postId: post.id }); return; }
     const btn = e.target.closest('[data-del-comment]');
     if (!btn) return;
     const cid = btn.closest('.comment').dataset.cid;
@@ -429,6 +442,7 @@ export function livePostList(container, makeQueries, { filter = null, empty = 'N
     const token = ++renderToken;
     let posts = [...new Map(maps.flatMap((m) => [...m.values()]).map((p) => [p.id, p])).values()];
     if (filter) posts = posts.filter(filter);
+    if (!state.isAdmin) posts = posts.filter((p) => !p.hidden); // staff-hidden posts (UI-level; see README)
     posts.sort((a, b) => tsMs(b.createdAt) - tsMs(a.createdAt));
     const visible = posts.slice(0, size);
     visible.forEach((p) => store.set(p.id, p));
@@ -534,7 +548,7 @@ export async function renderSaved(view) {
 export async function renderPostPage(view, id) {
   view.innerHTML = '<div class="loading">Loading…</div>';
   const snap = await getDoc(doc(db, 'posts', id)).catch((e) => { throw e; });
-  if (!snap.exists()) { view.innerHTML = emptyState('This post is not available', 'It may have been deleted or you may not have permission to see it.'); return; }
+  if (!snap.exists() || (snap.data().hidden && !state.isAdmin)) { view.innerHTML = emptyState('This post is not available', 'It may have been deleted or you may not have permission to see it.'); return; }
   const post = { id: snap.id, ...snap.data() };
   const users = await prefetchUsers([post.uid]);
   view.innerHTML = `<a class="back" href="#/feed">${icon('arrowLeft')} Back to feed</a><div data-wrap>${postHtml(post, users, { detail: true })}</div>`;

@@ -2,7 +2,10 @@
 export const state = {
   user: null,          // Firebase Auth user
   profile: null,       // users/{uid} document data
-  isAdmin: false,
+  isAdmin: false,       // true for any staff role
+  adminRole: null,      // 'super_admin' | 'admin' | 'moderator' | null
+  site: {},             // settings/global (maintenance flag, etc.)
+  announcements: [],    // active site announcements
   friends: new Set(),  // uids of friends
   following: new Set(),// uids I follow
   saved: new Set(),    // post ids I saved
