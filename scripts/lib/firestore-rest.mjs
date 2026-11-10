@@ -71,6 +71,10 @@ export function createClient({ projectId, fsUrl = 'https://firestore.googleapis.
       const qs = fieldPaths.map((f) => `updateMask.fieldPaths=${encodeURIComponent(f)}`).join('&');
       return call(`${base}/${path}?${qs}`, { method: 'PATCH', body: { fields: toFields(data) } });
     },
+    // replace a whole document (no update mask = overwrite)
+    async set(path, data) {
+      return call(`${base}/${path}`, { method: 'PATCH', body: { fields: toFields(data) } });
+    },
     // runQuery with a structuredQuery; returns decoded docs
     async query(structuredQuery, parent = '') {
       const rows = await call(`${fsUrl}/v1/${docs}${parent ? `/${parent}` : ''}:runQuery`, { method: 'POST', body: { structuredQuery } });

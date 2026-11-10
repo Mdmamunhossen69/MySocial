@@ -89,8 +89,8 @@ const LINES = {
     bn: ['ভ্রমণের গল্প সবসময়ই সেরা গল্প।', 'দারুণ ভ্রমণের জন্য খুব দূরে যাওয়া লাগে না।', 'একটু কৌতূহল নিয়ে গেলে যেকোনো জায়গাই সুন্দর লাগে।', 'ভবিষ্যতের ভ্রমণ-পরিকল্পনার জন্য এটা মনে রাখলাম।']
   },
   food: {
-    en: ['Food always tastes better when it is shared.', 'Homemade meals have a charm of their own.', 'Simple ingredients, done well, are hard to beat.', 'This is making the rest of us hungry.'],
-    bn: ['ভাগ করে খেলে খাবার আরও মজার হয়।', 'ঘরে বানানো খাবারের নিজস্ব একটা আনন্দ আছে।', 'সাধারণ উপকরণ ঠিকভাবে রান্না করলেই সেরা স্বাদ।', 'এটা পড়ে আমাদের বাকিদের খিদে পেয়ে গেল।']
+    en: ['Food always tastes better when it is shared.', 'Homemade meals have a charm of their own.', 'Simple ingredients, done well, are hard to beat.', 'That sounds delicious.'],
+    bn: ['ভাগ করে খেলে খাবার আরও মজার হয়।', 'ঘরে বানানো খাবারের নিজস্ব একটা আনন্দ আছে।', 'সাধারণ উপকরণ ঠিকভাবে রান্না করলেই সেরা স্বাদ।', 'শুনে তো দারুণ লাগছে।']
   },
   sports: {
     en: ['Sport brings people together like little else.', 'Whoever wins, a good match is a good match.', 'Practice and teamwork beat talent on its own.', 'Great to see people getting active and enjoying the game.'],
@@ -129,8 +129,8 @@ const LINES = {
     bn: ['একদিনে অনেকক্ষণ না পড়ে অল্প অল্প করে নিয়মিত পড়া বেশি কাজের।', 'প্রশ্ন করাই শেখার দ্রুততম উপায়।', 'পড়াশোনার জন্য শুভকামনা!']
   },
   humor: {
-    en: ['That got a smile out of me.', 'A good laugh is the best way to reset a day.', 'Humor like this is welcome here.'],
-    bn: ['এটা পড়ে হেসে ফেললাম।', 'একটু হাসি দিনটা নতুন করে শুরু করার সেরা উপায়।', 'এমন মজা এখানে সবসময় স্বাগত।']
+    en: ['That is a good one.', 'A good laugh is the best way to reset a day.', 'Humor like this is welcome here.'],
+    bn: ['এটা বেশ মজার।', 'একটু হাসি দিনটা নতুন করে শুরু করার সেরা উপায়।', 'এমন মজা এখানে সবসময় স্বাগত।']
   },
   celebration: {
     en: ['Congratulations, that is wonderful news!', 'Wishing you lots of happiness!', 'Great to see a reason to celebrate.'],
@@ -164,7 +164,7 @@ const FLAVOR = {
     ask: { en: ['Is there something I can help you think through?', 'What are you working on these days?'], bn: ['কিছু নিয়ে ভাবতে আমি কি সাহায্য করতে পারি?', 'এখন কী নিয়ে কাজ করছেন?'] }
   },
   tech: {
-    open: { en: ['Nice, a fellow tech fan!', 'Good tech thinking.', 'Love this.'], bn: ['দারুণ, আরেকজন প্রযুক্তি-প্রেমী!', 'প্রযুক্তি নিয়ে ভালো ভাবনা।', 'এটা ভালো লাগল।'] },
+    open: { en: ['Nice, tech is fun!', 'Good tech thinking.', 'Good stuff.'], bn: ['দারুণ, প্রযুক্তি সত্যিই মজার!', 'প্রযুক্তি নিয়ে ভালো ভাবনা।', 'ভালো উদ্যোগ।'] },
     close: { en: ['Remember to back up your stuff.', 'Always double-check what you install.', 'Curious what tools you use.'], bn: ['ব্যাকআপ রাখতে ভুলবেন না।', 'কিছু ইনস্টল করার আগে ভালো করে দেখে নিন।', 'আপনি কোন টুল ব্যবহার করেন জানতে ইচ্ছে করে।'] },
     ask: { en: ['What gadget or app do you use the most?', 'Are you learning any programming language?'], bn: ['কোন গ্যাজেট বা অ্যাপ সবচেয়ে বেশি ব্যবহার করেন?', 'কোনো প্রোগ্রামিং ভাষা শিখছেন?'] }
   },
@@ -184,7 +184,7 @@ const FLAVOR = {
     ask: { en: ['Where would you love to go next?', 'What is the best place you have visited?'], bn: ['এরপর কোথায় যেতে চান?', 'এখন পর্যন্ত সেরা কোন জায়গায় গেছেন?'] }
   },
   gaming: {
-    open: { en: ['GG!', 'Nice, a fellow gamer.', 'Respect.'], bn: ['জিজি!', 'দারুণ, আরেকজন গেমার।', 'শ্রদ্ধা।'] },
+    open: { en: ['GG!', 'Nice, gaming is fun.', 'Respect.'], bn: ['জিজি!', 'দারুণ, গেমিং সত্যিই মজার।', 'শ্রদ্ধা।'] },
     close: { en: ['Do not forget to stretch.', 'Play fair and have fun.', 'See you on the leaderboard!'], bn: ['মাঝে মাঝে শরীরটা নাড়াতে ভুলবেন না।', 'ন্যায্যভাবে খেলুন আর মজা করুন।', 'লিডারবোর্ডে দেখা হবে!'] },
     ask: { en: ['What are you playing right now?', 'Console, PC or mobile?'], bn: ['এখন কোন গেম খেলছেন?', 'কনসোল, পিসি নাকি মোবাইল?'] }
   },
@@ -209,7 +209,7 @@ const CHAT = {
     en: ['I am really sorry you are going through this. I am only an AI bot and I cannot give you the help you deserve. Please reach out right now to someone you trust, or to your local emergency number or a crisis helpline in your country. You do not have to carry this alone.'],
     bn: ['আপনি এমন কিছুর মধ্য দিয়ে যাচ্ছেন জেনে আমি সত্যিই দুঃখিত। আমি শুধু একটা এআই বট, আপনার যে সাহায্য প্রাপ্য তা দিতে পারি না। দয়া করে এখনই বিশ্বাসের কোনো মানুষ, আপনার দেশের জরুরি নম্বর বা কোনো হেল্পলাইনে যোগাযোগ করুন। আপনাকে একা এটা বইতে হবে না।']
   },
-  sad: { en: ['I am sorry to hear that. I am an AI bot, but I am happy to listen. Is there someone you trust you can also talk to?'], bn: ['শুনে খারাপ লাগল। আমি একটা এআই বট, তবে শুনতে রাজি আছি। বিশ্বাসের কেউ আছে কি যার সাথে আপনি কথা বলতে পারেন?'] }
+  sad: { en: ['I am sorry to hear that. I am an AI bot, but you are welcome to tell me more. Is there someone you trust you can also talk to?'], bn: ['শুনে খারাপ লাগল। আমি একটা এআই বট, তবে আপনি চাইলে আরও বলতে পারেন। বিশ্বাসের কেউ আছে কি যার সাথে আপনি কথা বলতে পারেন?'] }
 };
 
 // ---------------------------------------------------------------- random helpers

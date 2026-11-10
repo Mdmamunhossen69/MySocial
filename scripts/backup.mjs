@@ -3,6 +3,7 @@
 // Without BACKUP_PASSPHRASE the job refuses to run. Decrypt locally with scripts/backup-decrypt.mjs.
 //
 // Real Firestore exports need a paid Cloud Storage bucket, so this reads documents through the REST API.
+// NOT in the backup: Firebase Authentication accounts (emails / passwords) and users/{uid}/saved. See README "Restore".
 // Large embedded images (data URLs over 2 KB) are replaced by a placeholder unless BACKUP_INCLUDE_IMAGES=1.
 // Env: FIREBASE_SERVICE_ACCOUNT, BACKUP_PASSPHRASE, OUT_DIR (default backup-out), DRY_RUN=1, FS_URL, TOKEN_URL (tests)
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -25,7 +26,7 @@ const SUB = { posts: 'comments', chats: 'messages', groups: 'requests' };
 
 const slim = (v) => {
   if (typeof v === 'string') return !KEEP_IMAGES && v.startsWith('data:image') && v.length > 2048 ? '[image omitted from backup]' : v;
-  if (v instanceof Date) return v.toISOString();
+  if (v instanceof Date) return { $ts: v.toISOString() }; // typed, so restore can bring back real timestamps
   if (Array.isArray(v)) return v.map(slim);
   if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, slim(x)]));
   return v;
@@ -46,7 +47,7 @@ for (const c of TOP) {
   console.log(`${c}: ${docs.length}`);
 }
 
-const plain = gzipSync(Buffer.from(JSON.stringify({ project: sa.project_id, takenAt: new Date().toISOString(), imagesIncluded: KEEP_IMAGES, data: dump })));
+const plain = gzipSync(Buffer.from(JSON.stringify({ format: 2, project: sa.project_id, takenAt: new Date().toISOString(), imagesIncluded: KEEP_IMAGES, data: dump })));
 const salt = randomBytes(16), iv = randomBytes(12);
 const cipher = createCipheriv('aes-256-gcm', scryptSync(PASS, salt, 32), iv);
 const enc = Buffer.concat([cipher.update(plain), cipher.final()]);

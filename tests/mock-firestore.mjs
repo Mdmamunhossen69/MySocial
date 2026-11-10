@@ -86,17 +86,21 @@ export function startMock({ port = 0, seed = {}, authUsers = ['runner1'], runner
         const isCollection = rest.split('/').length % 2 === 1;
         if (req.method === 'GET') {
           if (isCollection) {
-            const list = [...docs.entries()].filter(([p]) => parentOf(p) === rest).map(([p, d]) => out(p, d));
-            return send(res, 200, list.length ? { documents: list } : {});
+            const all = [...docs.entries()].filter(([p]) => parentOf(p) === rest).map(([p, d]) => out(p, d));
+            const size = Number(params.get('pageSize') || 100), start = Number(params.get('pageToken') || 0);
+            const list = all.slice(start, start + size); // real pagination, so scripts must follow nextPageToken
+            return send(res, 200, list.length ? { documents: list, ...(start + size < all.length ? { nextPageToken: String(start + size) } : {}) } : {});
           }
           const d = docs.get(rest); return d ? send(res, 200, out(rest, d)) : send(res, 404, { error: 'not found' });
         }
         if (req.method === 'POST' && isCollection) {
           const id = params.get('documentId') || `A${++n}`; const p = `${rest}/${id}`;
+          if (docs.has(p)) return send(res, 409, { error: 'ALREADY_EXISTS' });
           docs.set(p, { fields: body.fields }); return send(res, 200, out(p, docs.get(p)));
         }
         if (req.method === 'PATCH') {
           const masks = params.getAll('updateMask.fieldPaths');
+          if (!masks.length) { docs.set(rest, { fields: body.fields }); return send(res, 200, out(rest, docs.get(rest))); }
           const d = docs.get(rest) || { fields: {} };
           masks.forEach((m) => { const v = getPathVal(body.fields, m); if (v !== undefined) setPath(d.fields, m, v); });
           docs.set(rest, d); return send(res, 200, out(rest, d));

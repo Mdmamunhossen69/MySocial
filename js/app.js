@@ -52,9 +52,12 @@ async function startSession(user, profileData) {
 
   try {
     const a = await getDoc(doc(db, 'admins', uid));
-    // a staff doc without a role (created by hand, older setup) counts as super_admin
-    state.adminRole = a.exists() ? (a.data().role || 'super_admin') : null;
-    state.isAdmin = a.exists();
+    // Fail closed (same as firestore.rules): only a known role gives staff access. A doc without a valid
+    // role (for example the old `enabled: true` setup) is NOT an admin until `role` is set by hand.
+    const role = a.exists() ? a.data().role : null;
+    state.adminRole = ['super_admin', 'admin', 'moderator'].includes(role) ? role : null;
+    state.isAdmin = state.adminRole !== null;
+    if (a.exists() && !state.isAdmin) console.warn('admins/' + uid + ' has no valid "role" (super_admin | admin | moderator): no staff access.');
   } catch { state.adminRole = null; state.isAdmin = false; }
 
   // "last active" for the admin dashboard, written at most once an hour

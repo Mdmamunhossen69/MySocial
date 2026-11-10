@@ -81,6 +81,13 @@ export async function postAsBot(bot, text, image = '') {
 export async function commentAsBot(bot, postId, text) {
   const clean = String(text || '').trim();
   if (!clean) throw new Error('Write a comment first.');
+  // Consent rule (also enforced by firestore.rules): bots only comment on bot posts or on posts of people who allowed it.
+  const post = await getDoc(doc(db, 'posts', postId));
+  if (!post.exists()) throw new Error('That post does not exist.');
+  const owner = await getDoc(doc(db, 'users', post.data().uid));
+  if (!(owner.exists() && (owner.data().isBot || owner.data().settings?.allowBotEngagement === true))) {
+    throw new Error('This person has not allowed AI bots to comment on their posts (Settings -> AI bots).');
+  }
   await addDoc(collection(db, 'posts', postId, 'comments'), { uid: bot.id, authorName: bot.name, text: clean.slice(0, 2000), ai: true, createdAt: serverTimestamp() });
   await updateDoc(doc(db, 'posts', postId), { commentCount: increment(1) });
 }
