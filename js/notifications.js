@@ -15,6 +15,7 @@ function describe(n) {
     case 'follow': return { text: 'started following you', href: `#/profile/${n.from}` };
     case 'reel_like': return { text: 'liked your reel', href: '#/reels' };
     case 'group_approved': return { text: 'approved your request to join a group', href: `#/group/${n.extra}` };
+    case 'notice': return { text: String(n.extra || 'sent you a notice'), href: '#/notifications' };
     default: return { text: 'sent you a notification', href: '#/notifications' };
   }
 }

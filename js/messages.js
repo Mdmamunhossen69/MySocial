@@ -91,6 +91,7 @@ export async function render(view, a, b) {
         ${isGroup ? `<span class="avatar avatar-initial" style="width:40px;height:40px;background:var(--primary)">${icon('users', 20)}</span>` : `<a href="#/profile/${esc(otherUid)}">${avatarHtml(other?.name, other?.photo, 40)}</a>`}
         <div><b>${esc(title)}</b>${isGroup ? `<small class="muted">${chat.members.length} members</small>` : ''}</div>
       </header>
+      ${other?.isBot ? '<div class="notice small">You are chatting with an <b>AI bot</b>. Its replies are automatic, template-based and can take a few minutes. It is not a person and can make mistakes.</div>' : ''}
       <div class="chat-messages" data-msgs><div class="loading">Loading…</div></div>
       <form class="chat-form" data-form>
         <label class="icon-btn" title="Send a photo">${icon('image')}<input type="file" accept="image/*" hidden data-photo></label>
@@ -172,6 +173,10 @@ export async function render(view, a, b) {
           subscribeMessages();
         }
         await addDoc(collection(db, 'chats', id, 'messages'), { uid: me, text, image, createdAt: serverTimestamp() });
+        // a bot has no browser: the scheduled bot job answers from this inbox
+        if (other?.isBot && text) {
+          await addDoc(collection(db, 'botInbox'), { fromUid: me, botId: otherUid, chatId: id, text: text.slice(0, 500), handled: false, createdAt: serverTimestamp() });
+        }
         await updateDoc(doc(db, 'chats', id), {
           lastMessage: { text: (text || '📷 Photo').slice(0, 120), uid: me },
           lastAt: serverTimestamp(),
@@ -192,8 +197,8 @@ export async function render(view, a, b) {
   if (a === 'with' && b) {
     if (b === me) { navigate('/messages'); return; }
     const other = await getUser(b);
-    if (other.isBot) {
-      toast('AI bots cannot chat. They only share posts.', 'info', 5000);
+    if (other.isBot && (other.chatEnabled === false || other.active === false || state.site.botsEnabled === false)) {
+      toast(`${other.name} is not chatting right now.`, 'info', 5000);
       navigate(`/profile/${b}`);
       return;
     }

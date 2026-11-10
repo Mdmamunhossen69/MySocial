@@ -1,0 +1,8 @@
+# never commit secrets or backups
+.env
+.env.*
+serviceAccount*.json
+*-firebase-adminsdk-*.json
+backup-out/
+*.enc
+node_modules/

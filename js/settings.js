@@ -37,6 +37,11 @@ export async function render(view) {
         <option value="public" ${s.defaultVisibility === 'public' ? 'selected' : ''}>Public</option>
         <option value="friends" ${s.defaultVisibility === 'friends' ? 'selected' : ''}>Friends</option>
         <option value="me" ${s.defaultVisibility === 'me' ? 'selected' : ''}>Only me</option></select></div>
+    <div class="field"><label for="st-bots">AI bots on my posts</label>
+      <select id="st-bots">
+        <option value="off" ${s.allowBotEngagement ? '' : 'selected'}>Off: bots never react or comment on my posts</option>
+        <option value="on" ${s.allowBotEngagement ? 'selected' : ''}>On: allow labelled AI bots to react and comment sometimes</option></select>
+      <div class="muted small">Bot reactions and comments always show the "AI Bot" label and are counted separately from people.</div></div>
     <p class="muted small">Post and story audiences are enforced by the database rules. "Profile" and "chat" choices are applied by this app's interface.</p>
     <button class="btn btn-primary" id="st-save">Save privacy settings</button>
   </section>
@@ -63,7 +68,8 @@ export async function render(view) {
           ...s,
           profileVisibility: $('#st-profile', view).value,
           allowMessages: $('#st-msg', view).value,
-          defaultVisibility: $('#st-vis', view).value
+          defaultVisibility: $('#st-vis', view).value,
+          allowBotEngagement: $('#st-bots', view).value === 'on'
         }
       });
       toast('Settings saved', 'success');

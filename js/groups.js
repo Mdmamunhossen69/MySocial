@@ -8,7 +8,7 @@ import {
   $, $$, esc, avatarHtml, getUser, toast, modal, closeModal, errMsg, emptyState, errorBox, confirmBox, notify
 } from './utils.js';
 import { icon } from './icons.js';
-import { composerHtml, bindComposer, livePostList } from './feed.js';
+import { composerHtml, bindComposer, livePostList, openReport } from './feed.js';
 
 function groupCard(g) {
   const mine = g.members.includes(state.user.uid);
@@ -85,6 +85,7 @@ export async function renderGroup(view, id) {
     else if (isMember) btn = `<button class="btn" data-act="leave">Leave group</button>`;
     else if (g.privacy === 'public') btn = `<button class="btn btn-primary" data-act="join">Join group</button>`;
     else btn = requested ? `<button class="btn" data-act="cancel-request">Cancel request</button>` : `<button class="btn btn-primary" data-act="request">Request to join</button>`;
+    if (!isOwner) btn += `<button class="btn" data-act="report">Report</button>`;
     return `<section class="card pad group-head">
       <a class="back" href="#/groups">${icon('arrowLeft')} Groups</a>
       <div class="row between wrap gap"><div><h2>${esc(g.name)}</h2>
@@ -135,6 +136,7 @@ export async function renderGroup(view, id) {
     b.disabled = true;
     try {
       switch (b.dataset.act) {
+        case 'report': openReport('group', { id, uid: g.ownerUid }); b.disabled = false; return;
         case 'join': await updateDoc(gref, { members: arrayUnion(me) }); toast('You joined the group', 'success'); await reload(); return;
         case 'leave':
           if (!(await confirmBox('Leave this group?', 'Leave'))) { b.disabled = false; return; }

@@ -8,7 +8,7 @@ import {
   emptyState, fullDate, confirmBox, errorBox
 } from './utils.js';
 import { icon } from './icons.js';
-import { composerHtml, bindComposer, livePostList } from './feed.js';
+import { composerHtml, bindComposer, livePostList, openReport } from './feed.js';
 import { sendRequest, cancelRequest, acceptRequest, declineRequest, unfriend, follow, unfollow } from './friends.js';
 
 async function relationship(uid) {
@@ -23,14 +23,15 @@ function actionButtons(uid, rel) {
   const followBtn = state.following.has(uid)
     ? `<button class="btn" data-act="unfollow">Following</button>`
     : `<button class="btn" data-act="follow">Follow</button>`;
-  if (rel === 'bot') return followBtn; // AI bots cannot be friended or messaged
-  const msg = `<a class="btn" href="#/messages/with/${esc(uid)}">${icon('message', 16)}Message</a>`;
+  const msg = `<a class="btn" href="#/messages/with/${esc(uid)}">${icon('message', 16)}${rel === 'bot' ? 'Chat with AI' : 'Message'}</a>`;
+  const reportBtn = `<button class="btn" data-act="report" title="Report this profile">${icon('flag', 16)}Report</button>`;
+  if (rel === 'bot') return `${followBtn}${msg}${reportBtn}`; // AI bots cannot be friended; they chat with automatic replies
   let main;
   if (rel === 'friends') main = `<button class="btn" data-act="unfriend">${icon('check', 16)}Friends</button>`;
   else if (rel === 'incoming') main = `<button class="btn btn-primary" data-act="accept">Confirm request</button><button class="btn" data-act="decline">Delete</button>`;
   else if (rel === 'outgoing') main = `<button class="btn" data-act="cancel">Cancel request</button>`;
   else main = `<button class="btn btn-primary" data-act="add">${icon('plus', 16)}Add friend</button>`;
-  return `${main}${followBtn}${msg}`;
+  return `${main}${followBtn}${msg}${reportBtn}`;
 }
 
 export async function render(view, uid) {
@@ -54,7 +55,7 @@ export async function render(view, uid) {
       <div class="profile-avatar">${avatarHtml(u.name, u.photo, 120)}</div>
       <div class="profile-info">
         <h2>${esc(u.name)}${botBadge(u)}</h2>
-        ${u.isBot ? '<div class="small muted">This is an automated AI bot account. It cannot reply to messages or friend requests.</div>' : ''}
+        ${u.isBot ? '<div class="small muted">This is an automated AI bot account. It can chat using automatic, template-based replies (they may take a while) and cannot be a friend.</div>' : ''}
         <div class="muted">${followers} followers · ${following} following${isMe ? ` · ${state.friends.size} friends` : ''}</div>
         ${u.bio ? `<p class="bio">${esc(u.bio)}</p>` : ''}
       </div>
@@ -114,6 +115,7 @@ export async function render(view, uid) {
         case 'unfriend':
           if (!(await confirmBox(`Remove ${u.name} from your friends?`, 'Unfriend'))) { b.disabled = false; return; }
           await unfriend(uid); break;
+        case 'report': openReport('user', { id: uid, uid }); b.disabled = false; return;
         case 'follow': await follow(uid); break;
         case 'unfollow': await unfollow(uid); break;
         default: break;

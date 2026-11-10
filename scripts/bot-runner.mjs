@@ -128,7 +128,9 @@ async function loadBots() {
     out.push({
       ...(base || { posts: [], postsBn: [] }),
       ...d,
-      posts: (base && base.posts) || [], postsBn: (base && base.postsBn) || [],
+      // post ideas: the ones an admin typed in the panel win over the built-in list
+      posts: Array.isArray(d.ideas) && d.ideas.length ? d.ideas : (base && base.posts) || [],
+      postsBn: Array.isArray(d.ideasBn) && d.ideasBn.length ? d.ideasBn : (base && base.postsBn) || [],
       interests: Array.isArray(d.interests) && d.interests.length ? d.interests : (base && base.interests) || [],
       personality: d.personality || (base && base.personality) || 'friendly',
       lang: d.lang || (base && base.lang) || 'both'
@@ -150,6 +152,11 @@ async function main() {
   await signIn();
   const global = (await fs.get('settings/global')) || {};
   if (global.botsEnabled === false) { console.log('Bots are switched OFF in the Admin panel (settings/global.botsEnabled). Nothing to do.'); return; }
+
+  // Chat-only runs (BOT_POSTS=0 BOT_COMMENTS=0) exit right away when nobody wrote to a bot: saves free-tier reads.
+  if (nPosts === 0 && nEngage === 0 && !(await fs.query({ from: [{ collectionId: 'botInbox' }], where: eq('handled', false), limit: 1 })).length) {
+    console.log('No new messages for the bots.'); return;
+  }
 
   const bots = await loadBots();
   if (!bots.length) { console.log('No bot profiles found. Create them in Admin -> AI Bots first.'); return; }
