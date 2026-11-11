@@ -19,7 +19,7 @@ Accounts (email/password and Google) · profiles with photo, cover and bio · fe
    - অ্যাপ চালানোর সময় কোনো পেজে index error এলে error-এর লিংকে ক্লিক করলে Firebase নিজেই index তৈরি করে দেয়।
 6. **Authorized domain**: Authentication → Settings → Authorized domains → `mdmamunhossen69.github.io` যোগ করুন।
 7. **GitHub Pages**: রিপোর Settings → Pages → Source: *Deploy from a branch* → `main` / `(root)`।
-8. **প্রথম Super Admin বানানো**: ওয়েবসাইটে একটা অ্যাকাউন্ট খুলুন → Firebase Authentication → Users থেকে আপনার UID কপি করুন → Firestore-এ `admins` কালেকশন বানিয়ে ডকুমেন্ট ID = সেই UID, ফিল্ড `role` = `super_admin` (লেখা string) দিন। `role` ছাড়া পুরনো ডকুমেন্টও `super_admin` ধরা হয়। এরপর বাকি স্টাফ Admin Panel → **Staff & roles** থেকে যোগ করা যায়। ফ্রন্টএন্ডে কোনো অ্যাডমিন পাসওয়ার্ড বা সিক্রেট নেই, আর rules অনুযায়ী কোনো সাধারণ ইউজার `/admins`-এ লিখতে পারে না।
+8. **প্রথম Super Admin বানানো**: ওয়েবসাইটে একটা অ্যাকাউন্ট খুলুন → Firebase Authentication → Users থেকে আপনার UID কপি করুন → Firestore-এ `admins` কালেকশন বানিয়ে ডকুমেন্ট ID = সেই UID, ফিল্ড `role` = `super_admin` (লেখা string) দিন। **`role` ঠিক `super_admin`, `admin` বা `moderator` হতে হবে।** `role` না থাকলে বা অন্য কিছু লেখা থাকলে ওই ডকুমেন্ট থেকে **কোনো ক্ষমতাই মেলে না** (rules ও অ্যাপ দুই জায়গাতেই)। আগের `enabled: true` ধরনের ডকুমেন্ট থাকলে তাতে `role` যোগ করুন, নইলে আপনি অ্যাডমিন পেজে ঢুকতে পারবেন না। এরপর বাকি স্টাফ Admin Panel → **Staff & roles** থেকে যোগ করা যায়। ফ্রন্টএন্ডে কোনো অ্যাডমিন পাসওয়ার্ড বা সিক্রেট নেই, আর rules অনুযায়ী কোনো সাধারণ ইউজার `/admins`-এ লিখতে পারে না।
 
 ## Admin Panel
 
@@ -56,6 +56,10 @@ Accounts (email/password and Google) · profiles with photo, cover and bio · fe
 | `Account deletion queue` | Super Admin যে অ্যাকাউন্ট কিউ করেছে সেটার Auth user ও ডেটা মোছে | প্রতি ~৩০ মিনিটে |
 | `Weekly encrypted backup` | সব কালেকশনের JSON ব্যাকআপ, **এনক্রিপ্ট করে** workflow artifact (৩০ দিন) | প্রতি রবিবার, বা হাতে চালিয়ে |
 
+**Service account-এর ক্ষমতা কমান (সুপারিশ):** Firebase-এর ডিফল্ট `firebase-adminsdk` অ্যাকাউন্টের ক্ষমতা অনেক বেশি। Google Cloud console → IAM → Service Accounts-এ নতুন একটা অ্যাকাউন্ট বানিয়ে শুধু **Cloud Datastore User** (Firestore পড়া/লেখা/মোছা) আর **Firebase Authentication Admin** (Auth ইউজার মোছা) রোল দিন, তার key-ই Secret-এ রাখুন। সন্দেহ হলে key মুছে (Service accounts → Keys → Delete) Secret বদলে ফেলুন।
+
+**Restore (হাতে, নিজের কম্পিউটারে; CI-তে নয়):** `BACKUP_PASSPHRASE=... FIREBASE_SERVICE_ACCOUNT="$(cat key.json)" CONFIRM_PROJECT_ID=<project-id> node scripts/restore.mjs ফাইল.enc` — এটা **dry run** (কিছু লেখে না)। সত্যিই লিখতে শেষে `--apply` দিন। ডিফল্টে শুধু যে ডকুমেন্ট নেই সেগুলো তৈরি হয়, আছেগুলো বদলায় না (`--overwrite` দিলে বদলায়)। `admins` ও `deletionRequests` কখনো restore হয় না। **ব্যাকআপে Firebase Authentication অ্যাকাউন্ট (ইমেইল/পাসওয়ার্ড) নেই**, তাই মুছে ফেলা অ্যাকাউন্ট ফিরে আসবে না, আর ব্যাকআপে ছবি বাদ থাকে। আসল প্রজেক্টে চালানোর আগে আলাদা টেস্ট প্রজেক্টে একবার restore করে দেখুন।
+
 ব্যাকআপ এনক্রিপ্ট না করলে পাবলিক রিপোর artifact যেকোনো GitHub ইউজার নামাতে পারত, তাই পাসওয়ার্ড ছাড়া job চলেই না। খুলতে: `BACKUP_PASSPHRASE=... node scripts/backup-decrypt.mjs ফাইল.enc out.json`। ব্যাকআপে বড় এম্বেডেড ছবি বাদ থাকে। GitHub scheduled job দেরিতে চলতে পারে, তাই ডিলিট "প্রায় সাথে সাথে" নয়।
 
 ### AI Bot accounts
@@ -65,6 +69,8 @@ Accounts (email/password and Google) · profiles with photo, cover and bio · fe
 * **টেক্সট আসে তৈরি টেমপ্লেট থেকে** (বাংলা ও ইংরেজি), কোনো AI মডেল দিয়ে নয়। তাই কথোপকথন সহজ ও সীমিত, ভুলও হতে পারে। পোস্ট/মেসেজের **লেখা** (কীওয়ার্ড) দেখে বিষয় বোঝে। **ছবির ভেতরের জিনিস চেনে না**, শুধু ক্যাপশন পড়ে।
 * ডুপ্লিকেট কমেন্ট আটকানো হয়। মৃত্যু, অসুস্থতা, কষ্টের মতো সংবেদনশীল পোস্টে বট চুপ থাকে। কেউ নিজের ক্ষতির কথা লিখলে বট জানায় সে এআই এবং আসল মানুষ বা হেল্পলাইনে যোগাযোগ করতে বলে।
 * **সম্মতি ছাড়া এনগেজমেন্ট নেই:** বট শুধু সেই ইউজারের পোস্টে কমেন্ট/রিঅ্যাক্ট করে যিনি Settings → *AI bots on my posts* চালু করেছেন (ডিফল্ট বন্ধ)। প্রতি পোস্টে সর্বোচ্চ ১টা বট, ১টা কমেন্ট ও ১টা রিঅ্যাকশন। বটের রিঅ্যাকশন **"🤖 N AI"** নামে আলাদা দেখায়, মানুষের সংখ্যায় ধরা হয় না।
+* **সম্মতির নিয়ম এখন `firestore.rules`-ও প্রয়োগ করে** (শুধু স্ক্রিপ্ট নয়): রানার বা অ্যাডমিন কেউই সম্মতি না দেওয়া ইউজারের পোস্টে বটের কমেন্ট/রিঅ্যাকশন লিখতে পারে না। অ্যাডমিন প্যানেলের "Comment as a bot" টুলেও একই নিয়ম।
+* **Bot runner অ্যাকাউন্টের নিয়ম:** ওই Auth ইউজারের জন্য `users/{uid}` প্রোফাইল ডকুমেন্ট **বানাবেন না** (বানালে সে সাধারণ ইউজারের মতো লিখতে পারত)। rules অনুযায়ী সে শুধু বটের হয়ে পোস্ট/কমেন্ট/রিঅ্যাকশন/চ্যাট-উত্তর লিখতে পারে, আর **শুধু যেসব প্রাইভেট চ্যাটে একটা AI বট আছে** সেগুলো পড়তে পারে (উত্তর দিতে হলে পড়তে হয়, তাই ইউজারকে চ্যাটে "এটা AI বট" জানানো হয়)।
 * **বট-টু-বট কমেন্ট ডিফল্টে বন্ধ** (ভুয়া জনপ্রিয়তার মতো দেখায়)। Global settings থেকে চালু করা যায়।
 * বটের সাথে চ্যাট: ইউজার প্রোফাইল থেকে *Chat with AI*। উত্তর **তাৎক্ষণিক নয়**, প্রতি ~২০ মিনিটের scheduled job দেয় (GitHub দেরি করতে পারে)।
 
@@ -113,17 +119,20 @@ python3 -m http.server 8000
 
 ## Testing status (honest)
 
-চালানো যায়:
+চালানো যায় (আপনার কম্পিউটারে বা GitHub Actions-এ):
 
 ```bash
-node --test tests/*.test.mjs                 # বট-রানার, অ্যাকাউন্ট ডিলিট, এনক্রিপ্টেড ব্যাকআপ (নকল Firestore সার্ভারের বিরুদ্ধে)
-python3 tests/check-imports.py .   # সব import ঠিক আছে কি না
-python3 tests/admin-smoke.py .     # হেডলেস Chromium-এ Admin Panel ও ইউজার-সাইড ফিচার (নকল Firebase দিয়ে; playwright লাগে)
+npm test                  # rules ইন্টারপ্রেটার + Permission Matrix + mutation টেস্ট + স্ক্রিপ্ট/edge-case টেস্ট + import চেক (নকল Firestore, কোনো নেটওয়ার্ক লাগে না)
+npm run test:browser      # হেডলেস Chromium-এ Admin Panel (playwright লাগে)
+npm run test:emulator     # আসল Firebase Firestore Emulator-এ একই Permission Matrix (Java 21 + নেটওয়ার্ক লাগে; production-এ কিছু ছোঁয় না)
+node tests/rules-matrix/generate-doc.mjs   # docs/PERMISSIONS.md নতুন করে বানায় (টেস্ট ফেল করে যদি ফাইল পুরনো হয়)
 ```
 
-**পরীক্ষা হয়েছে:** উপরের তিনটা টেস্ট পাস করেছে। এতে দেখা হয়েছে: সব Admin বিভাগ রেন্ডার হয়, রোল অনুযায়ী মেনু বদলায়, block/suspend/verify/hide/settings/staff/announcement/বট-এডিট সঠিক ডেটা লেখে, সম্মতি ছাড়া বট কিছু করে না, সংবেদনশীল পোস্টে চুপ থাকে, ডিলিট জব ডেটা মোছে কিন্তু স্টাফ ও বট ফেরত দেয়, ব্যাকআপ পাসওয়ার্ড ছাড়া খোলে না।
+Permission Matrix (কে কী পারে): [`docs/PERMISSIONS.md`](docs/PERMISSIONS.md)। CI (`.github/workflows/tests.yml`) তিনটা জব চালায়: `unit`, `browser`, `rules-emulator`। কোনো Secret লাগে না। Settings → Branches → main-এর branch protection-এ তিনটা জবই "Required" করে দিন।
 
-**পরীক্ষা হয়নি (আপনাকে করতে হবে):** আসল Firebase-এর বিরুদ্ধে কিছুই চালানো হয়নি। অর্থাৎ **`firestore.rules` কম্পাইল বা পরীক্ষা করা হয়নি**, আসল Auth, Firestore index, আসল GitHub Actions run, আর service-account দিয়ে আসল ডিলিট/ব্যাকআপ যাচাই হয়নি। রুলস Publish করলে Firebase console সিনট্যাক্স ভুল সাথে সাথে দেখাবে। তারপর *Rules Playground* বা Firebase Emulator দিয়ে পরীক্ষা করুন এবং দুটো টেস্ট অ্যাকাউন্ট (একটা সাধারণ, একটা moderator) দিয়ে ঘুরে দেখুন। কিছু ভাঙলে error-এর মেসেজ দিন, ঠিক করে দেব।
+**এই সেশনে সত্যিই চালানো হয়েছে:** নিজস্ব rules ইন্টারপ্রেটারে 12 actor × সব capability (rules-এর আসল লেখা দিয়ে), 31টা ইচ্ছাকৃত নিরাপত্তা-বাগ ঢুকিয়ে (mutation) দেখা হয়েছে টেস্ট ধরে কি না, rules-সহ নকল Firestore-এ বট-রানার (সম্মতি), ডিলিট/ব্যাকআপ/restore-এর edge case, হেডলেস Chromium-এ Admin Panel।
+
+**এখনো আসল Firebase-এ চালানো হয়নি:** আসল Firebase Emulator-এর রান (শুধু GitHub Actions-এর `rules-emulator` জবে হবে; এখানে নেটওয়ার্ক বন্ধ), আসল Firebase প্রজেক্টে rules Publish, আসল Auth, Firestore index, আসল service-account দিয়ে ডিলিট/ব্যাকআপ/restore, আসল GitHub Actions রান। **merge বা Publish-এর আগে `rules-emulator` জব সবুজ কি না দেখুন।** সবুজ না হলে ওই ফেলিওর আসল Google ইঞ্জিনের মত, সেটা আমাকে পাঠান।
 
 ## পরবর্তী ফিচার পরিকল্পনা
 

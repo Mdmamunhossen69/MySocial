@@ -25,7 +25,7 @@ export async function render(body) {
       const snap = await getDocs(collection(db, 'admins'));
       const rows = await Promise.all(snap.docs.map(async (d) => ({ id: d.id, ...d.data(), user: await getUser(d.id) })));
       list.innerHTML = rows.length ? rows.map((r) => `<div class="person" data-uid="${esc(r.id)}">${avatarHtml(r.user.name, r.user.photo, 40)}
-        <div class="grow"><b>${esc(r.user.name)}</b> <span class="tag">${esc(ROLE_LABEL[r.role || 'super_admin'])}</span>
+        <div class="grow"><b>${esc(r.user.name)}</b> ${ROLE_LABEL[r.role] ? `<span class="tag">${esc(ROLE_LABEL[r.role])}</span>` : '<span class="tag danger" title="No valid role: this person has NO staff access until a role is set">no valid role</span>'}
           <div class="muted small">${esc(r.id)}${r.addedAt ? ` · added ${when(r.addedAt)}` : ''}</div></div>
         ${r.id === state.user.uid ? '<span class="muted small">you</span>' : '<button class="btn btn-danger" data-rm>Remove</button>'}</div>`).join('') : emptyState('No staff documents');
     } catch (e) { list.innerHTML = errorBox(e); }

@@ -18,6 +18,7 @@ const exec = (args, env) => new Promise((resolve) => {
   c.on('close', (status) => resolve({ status, stdout, stderr }));
 });
 const run = (script, env) => exec([script], env);
+const run2 = exec;
 const now = new Date();
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
 const SA = JSON.stringify({ client_email: 'svc@test-proj.iam.gserviceaccount.com', private_key: privateKey, project_id: 'test-proj' });
@@ -110,7 +111,8 @@ test('bot runner: a wrong password fails loudly, missing secrets do nothing', as
 
 test('account deletion: purges data + auth user, refuses staff and bots', async () => {
   const m = await startMock({ authUsers: ['del1', 'adm1'], seed: {
-    'users/del1': { name: 'Del' }, 'users/del1/saved/x': { createdAt: now }, 'users/keep': { name: 'Keep' }, 'users/adm1': { name: 'Boss' }, 'admins/adm1': { role: 'admin' },
+    'admins/boss': { role: 'super_admin' }, 'admins/ex': { role: 'admin' },
+    'users/del1': { name: 'Del' }, 'users/del2': { name: 'Del2' }, 'deletionRequests/del2': { status: 'pending', requestedBy: 'ex' }, 'users/del1/saved/x': { createdAt: now }, 'users/keep': { name: 'Keep' }, 'users/adm1': { name: 'Boss' }, 'admins/adm1': { role: 'admin' },
     'posts/a': post('del1', 'mine'), 'posts/a/comments/c1': { uid: 'keep', text: 'hi' }, 'posts/b': post('keep', 'theirs'), 'posts/b/comments/c2': { uid: 'del1', text: 'old comment' },
     'friendships/del1_keep': { members: ['del1', 'keep'] }, 'follows/keep_del1': { follower: 'keep', followed: 'del1' },
     'chats/del1_keep': { type: 'private', members: ['del1', 'keep'] }, 'chats/del1_keep/messages/m1': { uid: 'keep', text: 'yo' },
@@ -119,6 +121,9 @@ test('account deletion: purges data + auth user, refuses staff and bots', async 
     'notifications/n1': { to: 'del1', from: 'keep' },
     'deletionRequests/del1': { status: 'pending', requestedBy: 'boss' }, 'deletionRequests/adm1': { status: 'pending', requestedBy: 'boss' }, 'deletionRequests/bot_03': { status: 'pending', requestedBy: 'boss' }
   } });
+  // more than one query page (500) and more than one list page (300) of data
+  for (let i = 0; i < 1100; i++) m.put(`posts/bulk${i}`, post('del1', `bulk ${i}`));
+  for (let i = 0; i < 650; i++) m.put(`posts/a/comments/cc${i}`, { uid: 'keep', text: 'x' });
   const env = { FIREBASE_SERVICE_ACCOUNT: SA, FS_URL: m.url, IDT_URL: m.url, TOKEN_URL: `${m.url}/token` };
   try {
     const r = await run('scripts/account-deletion.mjs', env);
@@ -128,7 +133,11 @@ test('account deletion: purges data + auth user, refuses staff and bots', async 
     for (const p of ['users/keep', 'posts/b', 'groups/shared', 'users/adm1', 'chats/g1']) assert.notEqual(m.get(p), null, `${p} should stay`);
     assert.deepEqual(m.get('groups/shared').members, ['keep']);
     assert.deepEqual(m.get('chats/g1').members, ['keep', 'x']);
+    assert.equal(m.ids('posts').filter((id) => id.startsWith('bulk')).length, 0, 'all 1100 posts removed (paging)');
+    assert.equal(m.ids('posts/a/comments').length, 0, 'all 650 comments removed (list paging)');
     assert.deepEqual(m.authDeleted, ['del1']);
+    assert.equal(m.get('deletionRequests/del2').status, 'refused', 'requester is no longer a super admin');
+    assert.notEqual(m.get('users/del2'), null, 'refused request deletes nothing');
     assert.equal(m.get('deletionRequests/del1').status, 'done');
     assert.equal(m.get('deletionRequests/adm1').status, 'refused');
     assert.equal(m.get('deletionRequests/bot_03').status, 'refused');
@@ -157,4 +166,33 @@ test('backup: refuses without passphrase, writes an encrypted file that decrypts
     const bad = await exec(['scripts/backup-decrypt.mjs', `${out}/${file}`, `${out}/y.json`], { BACKUP_PASSPHRASE: 'wrong wrong wrong' });
     assert.notEqual(bad.status, 0);
   } finally { await m.close(); }
+});
+
+test('restore: dry run by default, needs project confirmation, keeps existing, skips admins, brings back timestamps', async () => {
+  const src = await startMock({ seed: { 'users/u1': { name: 'Rina', photo: 'data:image/jpeg;base64,' + 'A'.repeat(5000) }, 'users/u2': { name: 'Sam' }, 'posts/p1': post('u1', 'hello'), 'posts/p1/comments/c1': { uid: 'u2', text: 'hi', createdAt: now }, 'admins/boss': { role: 'super_admin' } } });
+  const out = mkdtempSync(`${tmpdir()}/rs-`);
+  const pass = 'correct horse battery';
+  try {
+    const b = await run('scripts/backup.mjs', { FIREBASE_SERVICE_ACCOUNT: SA, FS_URL: src.url, TOKEN_URL: `${src.url}/token`, OUT_DIR: out, BACKUP_PASSPHRASE: pass });
+    assert.equal(b.status, 0, b.stderr);
+  } finally { await src.close(); }
+  const [file] = readdirSync(out);
+  const dst = await startMock({ seed: { 'users/u2': { name: 'Sam (edited since)' } } });
+  const env = { FIREBASE_SERVICE_ACCOUNT: SA, FS_URL: dst.url, TOKEN_URL: `${dst.url}/token`, BACKUP_PASSPHRASE: pass, CONFIRM_PROJECT_ID: 'test-proj' };
+  try {
+    const noConfirm = await run2(['scripts/restore.mjs', `${out}/${file}`, '--apply'], { ...env, CONFIRM_PROJECT_ID: 'other' });
+    assert.notEqual(noConfirm.status, 0, 'must confirm the project id');
+    const dry = await run2(['scripts/restore.mjs', `${out}/${file}`], env);
+    assert.equal(dry.status, 0, dry.stderr); assert.match(dry.stdout, /DRY RUN/);
+    assert.equal(dst.get('users/u1'), null, 'dry run writes nothing');
+    const real = await run2(['scripts/restore.mjs', `${out}/${file}`, '--apply'], env);
+    assert.equal(real.status, 0, real.stderr);
+    assert.equal(dst.get('users/u1').name, 'Rina');
+    assert.equal(dst.get('users/u1').photo, undefined, 'omitted image placeholder is never written');
+    assert.equal(dst.get('users/u2').name, 'Sam (edited since)', 'existing documents are kept');
+    assert.ok(dst.get('posts/p1/comments/c1').createdAt instanceof Date, 'timestamps come back as timestamps');
+    assert.equal(dst.get('admins/boss'), null, 'staff documents are never restored');
+    const wrong = await run2(['scripts/restore.mjs', `${out}/${file}`], { ...env, BACKUP_PASSPHRASE: 'wrong wrong wrong' });
+    assert.notEqual(wrong.status, 0);
+  } finally { await dst.close(); }
 });

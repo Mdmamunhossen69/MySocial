@@ -193,6 +193,18 @@ async def main():
         check('no JS errors (moderator)', not errors, '; '.join(errors[:3]))
         await b.close()
 
+        # ---------- legacy admin doc without a role (old `enabled: true` setup) must NOT become super admin
+        b, pg, errors = await page(p, None, {'admins/me': dict(enabled=True)})
+        await go(pg, '#/admin', 500)
+        check('legacy admin doc without role gets no admin access (fails closed)', 'Admins only' in await pg.inner_text('#main'))
+        await go(pg, '#/feed', 700)
+        check('legacy admin doc without role: no Admin link in the menu', 'Admin dashboard' not in await pg.inner_text('body'))
+        await b.close()
+        b, pg, errors = await page(p, None, {'admins/me': dict(role='owner')})
+        await go(pg, '#/admin', 500)
+        check('unknown role value gets no admin access', 'Admins only' in await pg.inner_text('#main'))
+        await b.close()
+
         # ---------- normal user: no admin, hidden posts, badges, AI reactions, comments off, announcement, bot chat
         b, pg, errors = await page(p, None)
         await go(pg, '#/admin', 500)

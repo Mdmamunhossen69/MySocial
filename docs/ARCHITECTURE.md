@@ -19,7 +19,7 @@ Browser (GitHub Pages, static files)
 * Single-page app, hash routing (`#/feed`, `#/profile/<uid>`, …) so GitHub Pages needs no rewrite rules.
 * Firebase SDK v10 modular build is loaded from Google's CDN as ES modules.
 * All security is enforced by `firestore.rules`. The frontend holds no secrets: the Firebase web config is public by design.
-* Staff rights = a document at `/admins/{uid}` with `role` = `super_admin` | `admin` | `moderator` (no role = super_admin). The first one is created by hand in the Firebase console; afterwards only a super_admin can change staff. No admin credential exists in the frontend, and rules block everyone else from writing `/admins`.
+* Staff rights = a document at `/admins/{uid}` with `role` = `super_admin` | `admin` | `moderator` (a missing or unknown role grants NOTHING: rules and app fail closed). The first one is created by hand in the Firebase console; afterwards only a super_admin can change staff. No admin credential exists in the frontend, and rules block everyone else from writing `/admins`.
 * Server-side work (permanent account deletion, backups) runs in **GitHub Actions** with a Google service account kept in GitHub Secrets (`scripts/`). The browser only queues a request in `/deletionRequests`.
 
 ## 2. Why images are stored in Firestore, not Storage
