@@ -117,6 +117,19 @@ python3 -m http.server 8000
 * Cloud Functions ব্যবহার হয়নি (paid), তাই counter ও notification ক্লায়েন্ট থেকে লেখা হয়।
 * Search শুধু নামের শুরু দিয়ে (prefix)।
 
+## Rules স্বয়ংক্রিয়ভাবে Publish (ঐচ্ছিক, সীমিত অনুমতিতে)
+
+`.github/workflows/deploy-rules.yml` টেস্ট (আসল Firestore Emulator সহ) পাস করার পর শুধু **`firestore.rules`** Firebase-এ Publish করে। ডেটা, index, hosting বা অন্য কিছু ছোঁয় না। pull request থেকে কখনো চলে না।
+
+একবার সেটআপ:
+1. Google Cloud Console → IAM & Admin → Service Accounts (প্রজেক্ট `mysocial-33681`) → Create → নাম `github-rules-deploy` → ভূমিকা শুধু **Firebase Rules Admin**।
+2. ওই অ্যাকাউন্টে Keys → Add key → JSON। ফাইলটা নামবে।
+3. GitHub → Settings → Secrets and variables → Actions → **New repository secret** → নাম `FIREBASE_RULES_SA`, মান = JSON ফাইলের পুরো লেখা। তারপর নামানো ফাইলটা মুছে ফেলুন। **এই JSON চ্যাটে বা কোডে কোথাও দেবেন না।**
+4. GitHub → Settings → Environments → New environment `production` → **Required reviewers**-এ নিজেকে দিন। তাহলে প্রতিবার আপনার "Approve" ছাড়া Publish হবে না।
+5. Actions → Deploy Firestore rules → Run workflow (Dry run টিক দেওয়া থাকবে) → সবুজ হলে অনুমতি ঠিক আছে। এরপর `main`-এ `firestore.rules` বদলালে বা হাতে Dry run তুলে চালালে আসল Publish হয়।
+
+নোট: এই ওয়ার্কফ্লো আসল Firebase-এ এখনো চালানো হয়নি। প্রথম Dry run-এ permission error এলে error-এর লেখা (Secret বাদে) আমাকে পাঠান, হয়তো একটা অতিরিক্ত ভূমিকা (যেমন Service Usage Consumer) লাগবে।
+
 ## Testing status (honest)
 
 চালানো যায় (আপনার কম্পিউটারে বা GitHub Actions-এ):
