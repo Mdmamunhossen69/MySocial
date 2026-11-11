@@ -3,12 +3,17 @@
 // Firebase emulator or the Rules Playground).
 import http from 'node:http';
 import { toFields, fromFields } from '../scripts/lib/firestore-rest.mjs';
+import { makeRulesGate } from './mock-rules.mjs';
 
-export function startMock({ port = 0, seed = {}, authUsers = ['runner1'], runnerPassword = 'secret' } = {}) {
+// rules: true  ->  user-token requests are checked against firestore.rules (see mock-rules.mjs); default off.
+export function startMock({ port = 0, seed = {}, authUsers = ['runner1'], runnerPassword = 'secret', rules = false, faults = {} } = {}) {
   const docs = new Map(); // "posts/P1" -> {fields}
   const authDeleted = [];
   const calls = [];
   let n = 0;
+  // faults (test only): { authDelete: n } -> the next n Auth deletes answer 500; { commitAfter: k } -> after k good commits, ONE commit answers 500
+  const fault = { authDelete: faults.authDelete || 0, commitAfter: faults.commitAfter ?? null };
+  const gate = rules ? makeRulesGate(docs) : null;
   const put = (path, obj) => docs.set(path, { fields: toFields(obj) });
   Object.entries(seed).forEach(([p, o]) => put(p, o));
 
@@ -32,6 +37,10 @@ export function startMock({ port = 0, seed = {}, authUsers = ['runner1'], runner
   const setPath = (obj, path, value) => { const ks = path.split('.'); let c = obj; ks.slice(0, -1).forEach((k) => { c[k] ||= { mapValue: { fields: {} } }; c = c[k].mapValue.fields ||= {}; }); c[ks.at(-1)] = value; };
   const getPathVal = (fields, path) => { let c = fields; const ks = path.split('.'); for (let i = 0; i < ks.length; i++) { const x = c?.[ks[i]]; if (!x) return undefined; if (i === ks.length - 1) return x; c = x.mapValue?.fields; } };
 
+  const forbid = (res) => send(res, 403, { error: { code: 403, status: 'PERMISSION_DENIED', message: 'Missing or insufficient permissions.' } });
+  const clone = (f) => JSON.parse(JSON.stringify(f));
+  const ok = (req, op, path, nf) => !gate || gate.allow(req.headers.authorization, op, path, nf);
+
   const srv = http.createServer((req, res) => {
     let b = ''; req.on('data', (c) => { b += c; });
     req.on('end', () => {
@@ -53,6 +62,7 @@ export function startMock({ port = 0, seed = {}, authUsers = ['runner1'], runner
         if (auth !== 'Bearer USER_TOKEN' && auth !== 'Bearer SA_TOKEN') return send(res, 401, { error: 'unauthenticated' });
         if (path.endsWith('/accounts:delete')) {
           if (auth !== 'Bearer SA_TOKEN') return send(res, 403, {});
+          if (fault.authDelete > 0) { fault.authDelete--; return send(res, 500, { error: { message: 'INTERNAL' } }); }
           if (!authUsers.includes(body.localId)) return send(res, 400, { error: { message: 'USER_NOT_FOUND' } });
           authDeleted.push(body.localId); return send(res, 200, {});
         }
@@ -68,41 +78,57 @@ export function startMock({ port = 0, seed = {}, authUsers = ['runner1'], runner
             .filter(([, d]) => matches(d, q.where));
           if (q.orderBy) { const f = q.orderBy[0]; const dir = f.direction === 'DESCENDING' ? -1 : 1; rows.sort(([, a], [, c]) => { const x = getField(a, f.field.fieldPath), y = getField(c, f.field.fieldPath); return ((x > y) - (x < y)) * dir; }); }
           if (q.limit) rows = rows.slice(0, q.limit);
+          if (rows.some(([p]) => !ok(req, 'list', p))) return forbid(res);
           return send(res, 200, rows.length ? rows.map(([p, d]) => ({ document: out(p, d) })) : [{}]);
         }
         if (rest.endsWith(':commit')) {
+          if (fault.commitAfter !== null) { if (fault.commitAfter === 0) { fault.commitAfter = null; return send(res, 500, { error: 'injected commit failure' }); } fault.commitAfter--; }
+          // all-or-nothing like Firestore: judge every write first, apply only if all are allowed
+          const plan = [];
           for (const w of body.writes) {
-            if (w.delete) { docs.delete(w.delete.split('/documents/')[1]); continue; }
+            if (w.delete) { const p = w.delete.split('/documents/')[1]; if (!ok(req, 'delete', p)) return forbid(res); plan.push(() => docs.delete(p)); continue; }
             const p = w.update.name.split('/documents/')[1];
             const d = docs.get(p);
             if (w.currentDocument?.exists && !d) return send(res, 404, { error: 'missing ' + p });
+            const nf = clone(d.fields);
             for (const t of w.updateTransforms || []) {
-              const cur = d.fields[t.fieldPath]; const nv = Number(cur?.integerValue || 0) + Number(t.increment.integerValue);
-              d.fields[t.fieldPath] = { integerValue: String(nv) };
+              const cur = nf[t.fieldPath]; const nv = Number(cur?.integerValue || 0) + Number(t.increment.integerValue);
+              nf[t.fieldPath] = { integerValue: String(nv) };
             }
+            if (!ok(req, 'update', p, nf)) return forbid(res);
+            plan.push(() => { d.fields = nf; });
           }
+          plan.forEach((f) => f());
           return send(res, 200, { writeResults: [{}] });
         }
         const isCollection = rest.split('/').length % 2 === 1;
         if (req.method === 'GET') {
           if (isCollection) {
+            if ([...docs.keys()].some((p) => parentOf(p) === rest && !ok(req, 'list', p))) return forbid(res);
             const all = [...docs.entries()].filter(([p]) => parentOf(p) === rest).map(([p, d]) => out(p, d));
             const size = Number(params.get('pageSize') || 100), start = Number(params.get('pageToken') || 0);
             const list = all.slice(start, start + size); // real pagination, so scripts must follow nextPageToken
             return send(res, 200, list.length ? { documents: list, ...(start + size < all.length ? { nextPageToken: String(start + size) } : {}) } : {});
           }
+          if (!ok(req, 'get', rest)) return forbid(res);
           const d = docs.get(rest); return d ? send(res, 200, out(rest, d)) : send(res, 404, { error: 'not found' });
         }
         if (req.method === 'POST' && isCollection) {
           const id = params.get('documentId') || `A${++n}`; const p = `${rest}/${id}`;
+          if (!ok(req, 'create', p, body.fields)) return forbid(res);
           if (docs.has(p)) return send(res, 409, { error: 'ALREADY_EXISTS' });
           docs.set(p, { fields: body.fields }); return send(res, 200, out(p, docs.get(p)));
         }
         if (req.method === 'PATCH') {
           const masks = params.getAll('updateMask.fieldPaths');
-          if (!masks.length) { docs.set(rest, { fields: body.fields }); return send(res, 200, out(rest, docs.get(rest))); }
-          const d = docs.get(rest) || { fields: {} };
+          if (!masks.length) {
+            if (!ok(req, docs.has(rest) ? 'update' : 'create', rest, body.fields)) return forbid(res);
+            docs.set(rest, { fields: body.fields }); return send(res, 200, out(rest, docs.get(rest)));
+          }
+          const existed = docs.has(rest);
+          const d = { fields: clone((docs.get(rest) || { fields: {} }).fields) };
           masks.forEach((m) => { const v = getPathVal(body.fields, m); if (v !== undefined) setPath(d.fields, m, v); });
+          if (!ok(req, existed ? 'update' : 'create', rest, d.fields)) return forbid(res);
           docs.set(rest, d); return send(res, 200, out(rest, d));
         }
         return send(res, 404, { error: 'unsupported ' + req.method + ' ' + rest });
@@ -110,7 +136,7 @@ export function startMock({ port = 0, seed = {}, authUsers = ['runner1'], runner
     });
   });
   return new Promise((resolve) => srv.listen(port, '127.0.0.1', () => resolve({
-    url: `http://127.0.0.1:${srv.address().port}`, docs, authDeleted, calls, put,
+    url: `http://127.0.0.1:${srv.address().port}`, docs, authDeleted, calls, put, denied: gate ? gate.denied : [],
     get: (p) => (docs.has(p) ? fromFields(docs.get(p).fields) : null),
     ids: (col) => [...docs.keys()].filter((p) => parentOf(p) === col).map((p) => p.split('/').at(-1)),
     close: () => new Promise((r) => srv.close(r))

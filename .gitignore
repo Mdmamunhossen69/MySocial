@@ -6,3 +6,8 @@ serviceAccount*.json
 backup-out/
 *.enc
 node_modules/
+
+# installed only by the CI emulator job / npm run test:emulator
+tests/emulator/node_modules/
+firestore-debug.log
+firebase-debug.log

@@ -44,11 +44,15 @@ try {
 if (backup.format !== 2) { console.error(`Unsupported backup format ${backup.format}. Only format 2 (typed timestamps) can be restored.`); process.exit(1); }
 if (backup.project !== sa.project_id) console.warn(`Note: this backup was taken from project "${backup.project}", restoring into "${sa.project_id}".`);
 
-// {$ts: iso} -> Date, drop omitted-image placeholders
+// {$ts: iso} -> Date, drop omitted-image placeholders.
+// A look-alike {$ts: "garbage"} (users may store arbitrary maps on their own profile) is kept as the plain map it was.
 const decode = (v) => {
-  if (Array.isArray(v)) return v.map(decode);
+  if (Array.isArray(v)) return v.filter((x) => x !== PLACEHOLDER).map(decode);
   if (v && typeof v === 'object') {
-    if (typeof v.$ts === 'string' && Object.keys(v).length === 1) return new Date(v.$ts);
+    if (typeof v.$ts === 'string' && Object.keys(v).length === 1) {
+      const d = new Date(v.$ts);
+      if (!Number.isNaN(d.getTime())) return d;
+    }
     return Object.fromEntries(Object.entries(v).filter(([, x]) => x !== PLACEHOLDER).map(([k, x]) => [k, decode(x)]));
   }
   return v;

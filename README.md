@@ -119,17 +119,20 @@ python3 -m http.server 8000
 
 ## Testing status (honest)
 
-চালানো যায়:
+চালানো যায় (আপনার কম্পিউটারে বা GitHub Actions-এ):
 
 ```bash
-node --test tests/*.test.mjs                 # বট-রানার, অ্যাকাউন্ট ডিলিট (পেজিংসহ), ব্যাকআপ/restore, বটের AI-পরিচয়, rules-এর স্ট্যাটিক চেক (নকল Firestore সার্ভারের বিরুদ্ধে)
-python3 tests/check-imports.py .   # সব import ঠিক আছে কি না
-python3 tests/admin-smoke.py .     # হেডলেস Chromium-এ Admin Panel ও ইউজার-সাইড ফিচার (নকল Firebase দিয়ে; playwright লাগে)
+npm test                  # rules ইন্টারপ্রেটার + Permission Matrix + mutation টেস্ট + স্ক্রিপ্ট/edge-case টেস্ট + import চেক (নকল Firestore, কোনো নেটওয়ার্ক লাগে না)
+npm run test:browser      # হেডলেস Chromium-এ Admin Panel (playwright লাগে)
+npm run test:emulator     # আসল Firebase Firestore Emulator-এ একই Permission Matrix (Java 21 + নেটওয়ার্ক লাগে; production-এ কিছু ছোঁয় না)
+node tests/rules-matrix/generate-doc.mjs   # docs/PERMISSIONS.md নতুন করে বানায় (টেস্ট ফেল করে যদি ফাইল পুরনো হয়)
 ```
 
-**পরীক্ষা হয়েছে:** উপরের তিনটা টেস্ট পাস করেছে। এতে দেখা হয়েছে: সব Admin বিভাগ রেন্ডার হয়, রোল অনুযায়ী মেনু বদলায়, block/suspend/verify/hide/settings/staff/announcement/বট-এডিট সঠিক ডেটা লেখে, সম্মতি ছাড়া বট কিছু করে না, সংবেদনশীল পোস্টে চুপ থাকে, ডিলিট জব ডেটা মোছে কিন্তু স্টাফ ও বট ফেরত দেয়, ব্যাকআপ পাসওয়ার্ড ছাড়া খোলে না।
+Permission Matrix (কে কী পারে): [`docs/PERMISSIONS.md`](docs/PERMISSIONS.md)। CI (`.github/workflows/tests.yml`) তিনটা জব চালায়: `unit`, `browser`, `rules-emulator`। কোনো Secret লাগে না। Settings → Branches → main-এর branch protection-এ তিনটা জবই "Required" করে দিন।
 
-**পরীক্ষা হয়নি (আপনাকে করতে হবে):** আসল Firebase-এর বিরুদ্ধে কিছুই চালানো হয়নি। অর্থাৎ **`firestore.rules` কম্পাইল বা পরীক্ষা করা হয়নি**, আসল Auth, Firestore index, আসল GitHub Actions run, আর service-account দিয়ে আসল ডিলিট/ব্যাকআপ যাচাই হয়নি। রুলস Publish করলে Firebase console সিনট্যাক্স ভুল সাথে সাথে দেখাবে। তারপর *Rules Playground* বা Firebase Emulator দিয়ে পরীক্ষা করুন এবং দুটো টেস্ট অ্যাকাউন্ট (একটা সাধারণ, একটা moderator) দিয়ে ঘুরে দেখুন। কিছু ভাঙলে error-এর মেসেজ দিন, ঠিক করে দেব।
+**এই সেশনে সত্যিই চালানো হয়েছে:** নিজস্ব rules ইন্টারপ্রেটারে 12 actor × সব capability (rules-এর আসল লেখা দিয়ে), 31টা ইচ্ছাকৃত নিরাপত্তা-বাগ ঢুকিয়ে (mutation) দেখা হয়েছে টেস্ট ধরে কি না, rules-সহ নকল Firestore-এ বট-রানার (সম্মতি), ডিলিট/ব্যাকআপ/restore-এর edge case, হেডলেস Chromium-এ Admin Panel।
+
+**এখনো আসল Firebase-এ চালানো হয়নি:** আসল Firebase Emulator-এর রান (শুধু GitHub Actions-এর `rules-emulator` জবে হবে; এখানে নেটওয়ার্ক বন্ধ), আসল Firebase প্রজেক্টে rules Publish, আসল Auth, Firestore index, আসল service-account দিয়ে ডিলিট/ব্যাকআপ/restore, আসল GitHub Actions রান। **merge বা Publish-এর আগে `rules-emulator` জব সবুজ কি না দেখুন।** সবুজ না হলে ওই ফেলিওর আসল Google ইঞ্জিনের মত, সেটা আমাকে পাঠান।
 
 ## পরবর্তী ফিচার পরিকল্পনা
 
