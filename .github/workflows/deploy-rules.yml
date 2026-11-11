@@ -1,0 +1,71 @@
+name: Deploy Firestore rules
+
+# Publishes firestore.rules to Firebase after the tests pass.
+#  * Runs on pushes to main that change firestore.rules, or by hand (Actions -> Deploy Firestore rules -> Run workflow).
+#  * A manual run defaults to DRY RUN (validates the rules and the service-account permissions, publishes nothing).
+#  * Never runs for pull requests, so a pull request (also from a fork) can never reach the secret.
+#  * The job uses the GitHub Environment "production": add "Required reviewers" there to get an approval button.
+#  * The secret FIREBASE_RULES_SA is a service-account key limited to the "Firebase Rules Admin" role. It is written
+#    to a temporary file that is deleted at the end and is never printed.
+on:
+  push:
+    branches: [main]
+    paths: [firestore.rules, firebase.json, .github/workflows/deploy-rules.yml]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run only (do not publish)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-rules
+  cancel-in-progress: false
+
+env:
+  FIREBASE_PROJECT_ID: mysocial-33681
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Tests must pass first (rules interpreter, matrix, mutation, scripts)
+        run: node --test "tests/*.test.mjs" "tests/rules-sim/*.test.mjs" "tests/rules-matrix/*.test.mjs" "tests/emulator/harness.test.mjs"
+      - name: Install Firebase tools (version pinned in tests/emulator/package.json)
+        run: cd tests/emulator && npm install --no-audit --no-fund
+      - name: Permission matrix on the real Firestore emulator must pass first
+        run: ./tests/emulator/node_modules/.bin/firebase emulators:exec --only firestore --project demo-mysocial "node tests/emulator/run.mjs"
+      - name: Check that the secret exists
+        env:
+          SA: ${{ secrets.FIREBASE_RULES_SA }}
+        run: |
+          if [ -z "$SA" ]; then
+            echo "::error::Secret FIREBASE_RULES_SA is not set (Settings -> Secrets and variables -> Actions -> New repository secret)."
+            exit 1
+          fi
+      - name: Deploy rules
+        env:
+          SA: ${{ secrets.FIREBASE_RULES_SA }}
+          DRY: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          umask 077
+          KEY="$RUNNER_TEMP/sa.json"
+          trap 'rm -f "$KEY"' EXIT
+          printf '%s' "$SA" > "$KEY"
+          export GOOGLE_APPLICATION_CREDENTIALS="$KEY"
+          FLAGS=""
+          if [ "$DRY" = "true" ]; then FLAGS="--dry-run"; echo "DRY RUN: nothing will be published."; fi
+          ./tests/emulator/node_modules/.bin/firebase deploy --only firestore:rules --project "$FIREBASE_PROJECT_ID" --non-interactive $FLAGS
