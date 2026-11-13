@@ -49,7 +49,14 @@ export const SEED = {
   'admins/leg': { enabled: true }, 'admins/bad': { role: 'owner' },
   'botRunners/run': { enabled: true },
   'botState/runner': { used: '{}' },
-  'botInbox/i1': { fromUid: 'u1', botId: 'bot_01', text: 'hi', handled: false, chatId: 'bot_01_u1' },
+  // an OLD-shape row (still holds a text) and rows of the new pointer shape in different states
+  'botInbox/i1': { fromUid: 'u1', botId: 'bot_01', text: 'hi', handled: false, chatId: 'bot_01_u1', createdAt: T(-3600e3) },
+  'botInbox/i_ptr': { fromUid: 'u1', botId: 'bot_01', messageId: 'pm', handled: false, chatId: 'bot_01_u1', createdAt: T(-3600e3) },
+  'botInbox/i_done': { fromUid: 'u1', botId: 'bot_01', messageId: 'pm', handled: true, chatId: 'bot_01_u1', createdAt: T(-3600e3) },
+  'botInbox/i_old': { fromUid: 'u1', botId: 'bot_01', messageId: 'pm', handled: false, chatId: 'bot_01_u1', createdAt: T(-8 * 24 * 3600e3) },
+  // a second bot-runner account (not an actor), used to check that it can never be promoted to staff
+  'botRunners/run2': { enabled: true },
+  'users/run2': { name: 'Runner Two', nameLower: 'runner two', bio: '', photo: '', cover: '', banned: false, settings: {} },
   'botLogs/bl1': { botId: 'bot_01', kind: 'post', text: 'x' },
   'posts/p1': post('u1', { reactions: {} }),
   'posts/p2': post('u2', { reactions: { u1: 'like' } }),
@@ -73,6 +80,14 @@ export const SEED = {
   'reels/rl1': { uid: 'u2', videoUrl: 'https://x/y.mp4', caption: '', likes: {} },
   'stories/s1': { uid: 'u2', audience: ['u2'], expiresAt: T(3600e3) }
 };
+
+// every actor's own message in its chat with bot_01 (what a botInbox pointer points to), plus one message written by someone else
+for (const a of Object.values(ACTORS)) {
+  if (!a.uid) continue;
+  SEED[`chats/${pair(a.uid, 'bot_01')}/messages/pm`] = { uid: a.uid, text: 'private question' };
+  SEED[`chats/${pair(a.uid, 'bot_01')}/messages/pm_other`] = { uid: 'somebody_else', text: 'not yours' };
+  SEED[`chats/${pair(a.uid, 'u2')}/messages/pm`] = { uid: a.uid, text: 'to a person, not a bot' }; // so that only "not a bot" can stop it
+}
 
 // [group, name, op, path, data|fn(actor)->data, allowedActors]
 const C = [];
@@ -115,6 +130,7 @@ cap('Staff', 'Add staff without a role', 'create', 'admins/u2', (a) => ({ addedB
 cap('Staff', 'Add staff with extra fields', 'create', 'admins/u2', (a) => staffDoc(a, 'admin', { enabled: true }), []);
 cap('Staff', 'Add staff with a forged "addedBy"', 'create', 'admins/u2', () => ({ role: 'admin', addedBy: 'adm', addedAt: { $srv: 1 } }), []);
 cap('Staff', 'Make an AI bot staff', 'create', 'admins/bot_02', (a) => staffDoc(a), []);
+cap('Staff', 'Make the bot-runner account staff', 'create', 'admins/run2', (a) => staffDoc(a), []);
 cap('Staff', 'Make a non-existing user staff', 'create', 'admins/ghost', (a) => staffDoc(a), []);
 cap('Staff', 'Change an admin\'s role', 'update', 'admins/adm', (a) => staffDoc(a, 'moderator'), ['super']);
 cap('Staff', 'Change own role (super admin)', 'update', 'admins/sup', (a) => staffDoc(a, 'admin'), []);
@@ -201,11 +217,34 @@ cap('AI bots', 'Runner writes a reaction under a human\'s key (u2)', 'update', '
 cap('AI bots', 'Runner raises commentCount on a consenting user\'s post', 'update', 'posts/p2', { commentCount: { $inc: 1 } }, [...N, 'runner']);
 cap('AI bots', 'Runner raises commentCount on a non-consenting user\'s post', 'update', 'posts/p1', { commentCount: { $inc: 1 } }, N);
 cap('AI bots', 'Runner pretends to be a human in a comment', 'create', 'posts/p2/comments/new', { uid: 'u1', text: 'hi' }, ['user']);
-cap('AI bots', 'Read the bot inbox', 'get', 'botInbox/i1', null, [...STAFF, 'runner']);
-cap('AI bots', 'Send a message to a bot (inbox)', 'create', 'botInbox/new', (a) => ({ fromUid: a.uid, botId: 'bot_01', text: 'hello', handled: false, chatId: pair(a.uid, 'bot_01'), createdAt: { $srv: 1 } }), N);
-cap('AI bots', 'Send an inbox message to a non-bot', 'create', 'botInbox/new', (a) => ({ fromUid: a.uid, botId: 'u2', text: 'hello', handled: false, chatId: pair(a.uid, 'u2') }), []);
-cap('AI bots', 'Send an inbox message already marked handled', 'create', 'botInbox/new', (a) => ({ fromUid: a.uid, botId: 'bot_01', text: 'hello', handled: true, chatId: pair(a.uid, 'bot_01') }), []);
-cap('AI bots', 'Mark an inbox message handled', 'update', 'botInbox/i1', { handled: true }, [...ADM, 'runner']);
+const inboxRow = (a, extra = {}) => ({ fromUid: a.uid, botId: 'bot_01', chatId: pair(a.uid, 'bot_01'), messageId: 'pm', handled: false, createdAt: { $srv: 1 }, ...extra });
+cap('AI bots', 'Read the bot inbox (a private-message pointer)', 'get', 'botInbox/i_ptr', null, ['super', 'runner']);
+cap('AI bots', 'Read an old inbox row that still holds a text', 'get', 'botInbox/i1', null, ['super', 'runner']);
+cap('AI bots', 'Ask a bot something (new inbox pointer to my own message)', 'create', 'botInbox/new', (a) => inboxRow(a), N);
+cap('AI bots', 'Inbox pointer that also carries the text', 'create', 'botInbox/new', (a) => inboxRow(a, { text: 'copy of my message' }), []);
+cap('AI bots', 'Inbox pointer to somebody else\'s message', 'create', 'botInbox/new', (a) => inboxRow(a, { messageId: 'pm_other' }), []);
+cap('AI bots', 'Inbox pointer to a message that does not exist', 'create', 'botInbox/new', (a) => inboxRow(a, { messageId: 'nope' }), []);
+cap('AI bots', 'Inbox pointer with an empty messageId', 'create', 'botInbox/new', (a) => inboxRow(a, { messageId: '' }), []);
+cap('AI bots', 'Inbox pointer with an oversized messageId', 'create', 'botInbox/new', (a) => inboxRow(a, { messageId: 'x'.repeat(41) }), []);
+cap('AI bots', 'Inbox pointer in somebody else\'s name', 'create', 'botInbox/new', (a) => inboxRow(a, { fromUid: 'u2' }), ['other']); // only u2 itself may write u2's name
+cap('AI bots', 'Inbox pointer into a chat that is not mine', 'create', 'botInbox/new', (a) => inboxRow(a, { chatId: 'bot_01_u2' }), ['other']); // only u2 owns that chat
+cap('AI bots', 'Inbox pointer with an unknown extra field', 'create', 'botInbox/new', (a) => inboxRow(a, { note: 'x' }), []);
+cap('AI bots', 'LEGACY (phase 1): old client sends the text itself', 'create', 'botInbox/new', (a) => ({ fromUid: a.uid, botId: 'bot_01', text: 'hello', handled: false, chatId: pair(a.uid, 'bot_01'), createdAt: { $srv: 1 } }), N);
+cap('AI bots', 'Send an inbox message to a non-bot', 'create', 'botInbox/new', (a) => inboxRow(a, { botId: 'u2', chatId: pair(a.uid, 'u2') }), []);
+cap('AI bots', 'Send an inbox message already marked handled', 'create', 'botInbox/new', (a) => inboxRow(a, { handled: true }), []);
+cap('AI bots', 'Mark an inbox message handled', 'update', 'botInbox/i_ptr', { handled: true, handledAt: { $srv: 1 } }, ['runner']);
+cap('AI bots', 'Mark an OLD inbox row handled (text untouched, old runner code)', 'update', 'botInbox/i1', { handled: true, handledAt: { $srv: 1 }, skipped: 'daily-limit' }, ['runner']);
+cap('AI bots', 'Blank the text of an old inbox row', 'update', 'botInbox/i1', { text: '', handled: true }, ['runner']);
+cap('AI bots', 'Write a different text into an inbox row', 'update', 'botInbox/i1', { text: 'copy of the private message' }, []);
+cap('AI bots', 'Put a text into a pointer row', 'update', 'botInbox/i_ptr', { text: 'copy of the private message' }, []);
+cap('AI bots', 'Redirect an inbox row to another bot or chat', 'update', 'botInbox/i_ptr', { botId: 'bot_02' }, []);
+cap('AI bots', 'Redirect an inbox row to another message', 'update', 'botInbox/i_ptr', { messageId: 'other' }, []);
+cap('AI bots', 'Record a failed attempt (short code)', 'update', 'botInbox/i_ptr', { attempts: 2, lastError: 'http-503' }, ['runner']);
+cap('AI bots', 'Record an unbounded number of attempts', 'update', 'botInbox/i_ptr', { attempts: 99 }, []);
+cap('AI bots', 'Store a long free-text error in an inbox row', 'update', 'botInbox/i_ptr', { lastError: 'x'.repeat(200) }, []);
+cap('AI bots', 'Delete an inbox row that was answered', 'delete', 'botInbox/i_done', null, ['super', 'runner']);
+cap('AI bots', 'Delete a pending inbox row younger than 7 days', 'delete', 'botInbox/i_ptr', null, ['super']);
+cap('AI bots', 'Delete a pending inbox row older than 7 days', 'delete', 'botInbox/i_old', null, ['super', 'runner']);
 cap('AI bots', 'Write a bot activity log', 'create', 'botLogs/new', { botId: 'bot_01', kind: 'post', text: 'x', createdAt: { $srv: 1 } }, [...ADM, 'runner']);
 cap('AI bots', 'Read bot activity logs', 'get', 'botLogs/bl1', null, STAFF);
 cap('AI bots', 'Edit a bot activity log', 'update', 'botLogs/bl1', { text: 'changed' }, []);

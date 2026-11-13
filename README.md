@@ -91,6 +91,13 @@ Accounts (email/password and Google) · profiles with photo, cover and bio · fe
 6. Actions ট্যাব → *AI bot activity* → **Run workflow** দিয়ে একবার হাতে চালান।
 7. Firestore-এ নতুন index লাগবে (প্রতি বটের activity log): প্রথমবার *Activity* বাটনে চাপলে error-এর লিংক থেকে এক ক্লিকে তৈরি হয়, বা `firebase deploy --only firestore:indexes`।
 
+**Kill switch ও চ্যাট-গোপনীয়তা (নতুন নিয়ম):**
+* **বট ডিফল্টভাবে বন্ধ।** `settings/global` ডকুমেন্ট না থাকলে বা `botsEnabled` স্পষ্টভাবে `true` না হলে Runner কিছুই লিখতে পারে না। এটা শুধু স্ক্রিপ্ট নয়, `firestore.rules` (`runnerOn()`) নিজেই আটকায়, Runner-এর পাসওয়ার্ড ফাঁস হলেও। চালু করতে Admin → AI Bots থেকে নিজে ON করতে হবে।
+* **Runner অ্যাকাউন্ট কখনো Admin/Staff হতে পারে না**; `/admins`-এ থাকলে সে Runner-ক্ষমতা হারায়, আর Runner-এর uid Staff বানানোও rules-এ বন্ধ।
+* **`botInbox` এখন শুধু "পয়েন্টার"** (`messageId`), মেসেজের কপি নয়। Runner চ্যাট থেকে বার্তা পড়ে, **উত্তর সফলভাবে পাঠানোর পরেই** row মোছে। উত্তর ব্যর্থ হলে row ও মেসেজ অক্ষত থাকে (সর্বোচ্চ ৫ বার চেষ্টা)। ব্যক্তিগত টেক্সট Log, State বা Memory-তে লেখা হয় না, Log-এ শুধু `chat:greeting`-এর মতো কোড। পুরোনো row-এর `text` উত্তরের পর ফাঁকা করে মোছা হয়। ৭ দিনের পুরোনো row দিনে একবার পরিষ্কার হয় (প্রতিটি row যাচাই করে)। Inbox পড়তে পারে শুধু Runner ও Super Admin।
+* **দৈনিক Read বাজেট** (`scripts/lib/budget.mjs`): `BOT_DAILY_READS` (ডিফল্ট ৬০০০ = **অস্থায়ী** সীমা, নিরাপদ প্রমাণিত নয়; Firebase Usage দেখে ঠিক করুন), `BOT_RUN_READS` (প্রতি রান ৫০০)। ৭০%-এ নতুন পোস্ট/এনগেজমেন্ট বন্ধ, ১০০%-এ সম্পূর্ণ বন্ধ (exit 0); Firestore 429 পেলে থেমে যায়, আবার চেষ্টা করে না। এটা শুধু Runner-এর নিজের read গোনে, সাইটের ব্যবহারকারী, সাপ্তাহিক Backup বা Deletion job-এর read গোনে না।
+* **Rules publish-এর ক্রম:** আগে Console-এ নতুন `firestore.rules` (ধাপ ১: পুরোনো `text` ও নতুন `messageId`, দুই আকারই গ্রহণ করে), তারপর কোড। ≥২৪ ঘণ্টা পরে ধাপ ২ (`LEGACY` শাখা মুছে)। **Rollback:** কোড ও Rules একসাথে ফেরান; তাৎক্ষণিক বন্ধ করতে Admin-এ বট OFF।
+
 বন্ধ করতে: Admin → AI Bots → *Turn all bots OFF*, বা Secret মুছুন, বা Actions-এ workflow *Disable* করুন। GitHub পাবলিক রিপোতে ৬০ দিন কোনো কমিট না হলে scheduled workflow নিজে বন্ধ করে দেয়, তখন Actions ট্যাব থেকে আবার Enable করতে হয়।
 
 ### Optional

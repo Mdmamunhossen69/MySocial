@@ -172,10 +172,14 @@ export async function render(view, a, b) {
           exists = true;
           subscribeMessages();
         }
-        await addDoc(collection(db, 'chats', id, 'messages'), { uid: me, text, image, createdAt: serverTimestamp() });
+        const msgRef = await addDoc(collection(db, 'chats', id, 'messages'), { uid: me, text, image, createdAt: serverTimestamp() });
         // a bot has no browser: the scheduled bot job answers from this inbox
         if (other?.isBot && text) {
-          await addDoc(collection(db, 'botInbox'), { fromUid: me, botId: otherUid, chatId: id, text: text.slice(0, 500), handled: false, createdAt: serverTimestamp() });
+          // The row is only a POINTER to the message just sent (no copy of the private text). If it cannot be written
+          // (bots are switched off, or no connection) the message itself is already saved, so the chat is not blocked.
+          try {
+            await addDoc(collection(db, 'botInbox'), { fromUid: me, botId: otherUid, chatId: id, messageId: msgRef.id, handled: false, createdAt: serverTimestamp() });
+          } catch { toast(`${other.name} will not answer right now, your message is saved.`, 'info', 5000); }
         }
         await updateDoc(doc(db, 'chats', id), {
           lastMessage: { text: (text || '📷 Photo').slice(0, 120), uid: me },
@@ -197,7 +201,7 @@ export async function render(view, a, b) {
   if (a === 'with' && b) {
     if (b === me) { navigate('/messages'); return; }
     const other = await getUser(b);
-    if (other.isBot && (other.chatEnabled === false || other.active === false || state.site.botsEnabled === false)) {
+    if (other.isBot && (other.chatEnabled === false || other.active === false || state.site.botsEnabled !== true)) {
       toast(`${other.name} is not chatting right now.`, 'info', 5000);
       navigate(`/profile/${b}`);
       return;

@@ -97,7 +97,7 @@ test('AI bots: runner and admin can only act as bots, and only with the owner\'s
   assert.match(botComment, /isBotUser\(request\.resource\.data\.uid\)[\s\S]*botMayComment\(postId\)/, 'bot comments go through botMayComment');
   assert.match(fn('botMayComment'), /engagementOk\(p\.uid\)/, 'bot comments need consent');
   assert.match(fn('botMayComment'), /visibility == 'public'/);
-  const runnerReaction = /isBotRunner\(\)\s*&& resource\.data\.visibility == 'public'\s*&& engagementOk\(resource\.data\.uid\)\s*&& request\.resource\.data\.diff\(resource\.data\)\.affectedKeys\(\)\.hasOnly\(\['reactions'\]\)/;
+  const runnerReaction = /runnerOn\(\)\s*&& engagementOk\(resource\.data\.uid\)[\s\S]*?resource\.data\.visibility == 'public'\s*&& request\.resource\.data\.diff\(resource\.data\)\.affectedKeys\(\)\.hasOnly\(\['reactions'\]\)/;
   assert.match(posts, runnerReaction, 'bot reactions need consent and a public post');
   assert.match(posts, /request\.resource\.data\.videoUrl == ''/, 'bots never post video');
   assert.match(posts, /hasOnly\(botIds\(\)\)/, 'the runner may only set bot-keyed reactions');

@@ -7,22 +7,30 @@
 //    comments, a reaction under a bot's own key, chat replies). It cannot touch real users' data.
 //
 // What it does each run (all limits are enforced here AND configurable from the Admin panel):
-//  1. Global switch  settings/global.botsEnabled (default on). Off = the job exits immediately.
+//  1. Global switch  settings/global.botsEnabled. FAIL-CLOSED: bots run ONLY while it is explicitly true. A missing
+//                    document or field means OFF. The same rule is enforced by firestore.rules (runnerOn()), so even
+//                    this script cannot write while it is off.
 //  2. Auto posts     bots with autoPost on, within their daily limit.
 //  3. Auto engagement on REAL users' posts: ONLY when the author turned on
 //                    Settings -> "Allow AI bots to react and comment" (users/{uid}.settings.allowBotEngagement).
 //                    At most one bot per post, a relevant comment + a reaction, always shown as AI.
 //  4. Bot-to-bot comments: only if settings/global.botToBotComments is on (default OFF, to avoid
 //                    staged conversations that look like real popularity).
-//  5. Chat replies   answers messages users sent to a bot (botInbox).
-//  Every action is written to botLogs.
+//  5. Chat replies   answers messages users sent to a bot (botInbox). A row is only a POINTER to the chat message;
+//                    the private text is read from the chat, never copied into logs, state or memory. After a
+//                    successful reply the row is closed and deleted; after a failure it stays pending (max 5 tries).
+//  Every action is written to botLogs (a code like "chat:greeting", never the user's text).
+//
+// Safety net: a daily read budget (scripts/lib/budget.mjs). BOT_DAILY_READS is a TEMPORARY cap (default 6000), BOT_RUN_READS
+// limits one run (default 500). Soft limit 70% = no new posts/engagement, hard limit = full stop (exit 0).
 //
 // Env: BOT_RUNNER_EMAIL, BOT_RUNNER_PASSWORD (secrets), BOT_POSTS, BOT_COMMENTS (optional),
 //      DRY_RUN=1 (print only), AUTH_URL / FS_URL (override endpoints, used by tests).
 import { BOTS, isBotId } from '../js/bots-data.js';
 import { makeComment, pickReaction, chatReply, nextPostText, relevance, normalize } from '../js/bots-brain.js';
 import { firebaseConfig } from '../js/firebase-config.js';
-import { createClient, eq, and } from './lib/firestore-rest.mjs';
+import { createClient, eq, and, lt } from './lib/firestore-rest.mjs';
+import { Budget, BudgetStop, meter, isQuotaError } from './lib/budget.mjs';
 
 const EMAIL = process.env.BOT_RUNNER_EMAIL;
 const PASSWORD = process.env.BOT_RUNNER_PASSWORD;
@@ -45,7 +53,9 @@ const num = (v, d, max = 10) => { const n = parseInt(v, 10); return Number.isFin
 const today = () => new Date().toISOString().slice(0, 10);
 
 let token = '';
-const fs = createClient({ projectId: firebaseConfig.projectId, fsUrl: FS_URL, getToken: async () => token });
+const budget = Budget.fromEnv();
+const fs = meter(createClient({ projectId: firebaseConfig.projectId, fsUrl: FS_URL, getToken: async () => token }), budget);
+let maintenanceDone = false;
 
 async function signIn() {
   const res = await fetch(`${AUTH_URL}/v1/accounts:signInWithPassword?key=${encodeURIComponent(firebaseConfig.apiKey)}`, {
@@ -85,6 +95,7 @@ async function saveState(st) {
 async function log(bot, kind, targetId, text) {
   if (DRY) return;
   try {
+    // `text` is public bot content (a post / comment the bot wrote) or a code such as "chat:greeting". Never a user's message.
     await fs.create('botLogs', { botId: bot.id, botName: bot.name, kind, targetId: targetId || '', text: String(text || '').slice(0, 200), source: 'runner', createdAt: new Date() });
   } catch (e) { console.warn('log failed:', e.message); }
 }
@@ -143,18 +154,106 @@ const usedToday = (st, bot) => st.daily.counts[bot.id] || 0;
 const canAct = (st, bot) => bot.active !== false && usedToday(st, bot) < limitOf(bot);
 const spend = (st, bot) => { st.daily.counts[bot.id] = usedToday(st, bot) + 1; };
 
+// ------------------------------------------------------------ chat inbox (pointer rows)
+const pairId = (a, b) => (a < b ? `${a}_${b}` : `${b}_${a}`);
+const MAX_ATTEMPTS = 5;
+const RETENTION_MS = 7 * 24 * 3600 * 1000;
+const errCode = (e) => { const m = /->\s*(\d{3})/.exec(String((e && e.message) || '')); return m ? `http-${m[1]}` : 'error'; };
+
+async function deleteRow(id) { await fs.deleteMany([`${fs.docs}/botInbox/${id}`]); }
+
+// Answered: remember that, blank an OLD row's text (private), then delete the row. If the delete fails the row stays
+// as "answered" and is removed by the next maintenance pass.
+async function closeAnswered(m) {
+  if (DRY) return;
+  await fs.patch(`botInbox/${m.id}`, { handled: true, answered: true, handledAt: new Date(), ...(typeof m.text === 'string' && m.text ? { text: '' } : {}) });
+  try { await deleteRow(m.id); } catch (e) { console.warn(`inbox row ${m.id} kept for the next clean-up (${errCode(e)})`); }
+}
+// Not answered on purpose (policy / nothing to answer): marked handled so it is not retried, but NOT deleted here.
+// (Rows that still hold an old text are removed by the 7-day clean-up.)
+async function closeSkipped(m, why) {
+  if (DRY) return;
+  await fs.patch(`botInbox/${m.id}`, { handled: true, handledAt: new Date(), skipped: why });
+}
+// A reply failed: keep the row (and the message) pending, count the attempt, give up after MAX_ATTEMPTS.
+async function recordFailure(m, e) {
+  if (DRY) return;
+  const attempts = (Number.isInteger(m.attempts) ? m.attempts : 0) + 1;
+  try {
+    await fs.patch(`botInbox/${m.id}`, { attempts, lastError: errCode(e), ...(attempts >= MAX_ATTEMPTS ? { handled: true, skipped: 'gave-up' } : {}) });
+  } catch (e2) { console.warn(`could not record the failure of inbox row ${m.id} (${errCode(e2)})`); }
+}
+
+// Once per Pacific day: remove leftovers (answered rows whose delete failed) and rows older than 7 days.
+// Every candidate is re-checked here before it is deleted, and firestore.rules check it again.
+async function maintenance() {
+  if (DRY || !budget.maintenanceDue()) return;
+  let removed = 0;
+  const left = await fs.query({ from: [{ collectionId: 'botInbox' }], where: and(eq('handled', true), eq('answered', true)), limit: 25 });
+  const cutoff = new Date(Date.now() - RETENTION_MS);
+  const old = await fs.query({ from: [{ collectionId: 'botInbox' }], where: lt('createdAt', cutoff), limit: 25 });
+  const safe = new Map();
+  for (const r of left) if (r.id && typeof r.fromUid === 'string' && isBotId(r.botId) && r.answered === true && r.handled === true) safe.set(r.id, r);
+  for (const r of old) if (r.id && typeof r.fromUid === 'string' && isBotId(r.botId) && r.createdAt instanceof Date && r.createdAt.getTime() < cutoff.getTime()) safe.set(r.id, r);
+  for (const id of safe.keys()) { try { await deleteRow(id); removed++; } catch (e) { console.warn(`clean-up of ${id} failed (${errCode(e)})`); } }
+  maintenanceDone = true;
+  console.log(`Inbox clean-up: ${removed} row(s) removed.`);
+}
+
+async function answerRow(m, bot, st) {
+  if (!bot || bot.active === false || bot.chatEnabled === false) return closeSkipped(m, 'chat-disabled');
+  if (typeof m.fromUid !== 'string' || m.chatId !== pairId(m.fromUid, m.botId)) return closeSkipped(m, 'bad-row'); // never act on a row that does not match its own chat
+  if ((st.daily.chat[m.fromUid] || 0) >= 15) return closeSkipped(m, 'daily-limit');
+  const chat = await fs.get(`chats/${m.chatId}`);
+  if (!chat || chat.type !== 'private' || !(chat.members || []).includes(m.fromUid) || !(chat.members || []).includes(bot.id)) return closeSkipped(m, 'no-chat');
+  // the user's words: from the chat message the row points to (old rows still carry a copy). Used in memory only.
+  let text = typeof m.text === 'string' ? m.text : '';
+  if (!text) {
+    const msg = typeof m.messageId === 'string' && m.messageId ? await fs.get(`chats/${m.chatId}/messages/${m.messageId}`) : null;
+    if (!msg) return closeSkipped(m, 'message-gone');
+    if (msg.uid !== m.fromUid) return closeSkipped(m, 'bad-pointer');
+    text = String(msg.text || '');
+  }
+  const hist = (await fs.query({
+    from: [{ collectionId: 'messages' }],
+    orderBy: [{ field: { fieldPath: 'createdAt' }, direction: 'DESCENDING' }], limit: 6
+  }, `chats/${m.chatId}`)).reverse();
+  const reply = chatReply({ bot, text, history: hist });
+  text = '';
+  if (DRY) { console.log(`[dry] chat reply as ${bot.name} (${reply.intent}/${reply.lang})`); return 'answered'; }
+  try {
+    // fixed id = one reply per row, even if two runs overlap: the second create answers 409 (already replied)
+    await fs.create(`chats/${m.chatId}/messages`, { uid: bot.id, text: reply.text, image: '', ai: true, createdAt: new Date() }, `r_${m.id}`);
+  } catch (e) {
+    if (!/->\s*409\b/.test(String(e.message))) throw e; // a real failure: the caller keeps the row pending
+    console.log(`Row ${m.id} was already answered; closing it.`);
+  }
+  try { await fs.patch(`chats/${m.chatId}`, { lastMessage: { text: reply.text, uid: bot.id }, lastAt: new Date() }); }
+  catch (e) { console.warn(`chat preview not updated (${errCode(e)})`); } // the reply itself is sent; do not retry it
+  await log(bot, 'chat', m.chatId, `chat:${reply.intent}`);
+  st.daily.chat[m.fromUid] = (st.daily.chat[m.fromUid] || 0) + 1;
+  await closeAnswered(m);
+  console.log(`Chat reply as ${bot.name} (${reply.intent}/${reply.lang})`);
+  return 'answered';
+}
+
 // ------------------------------------------------------------ main
-async function main() {
-  const nPosts = num(process.env.BOT_POSTS, 1 + rand(2));
-  const nEngage = num(process.env.BOT_COMMENTS, 1 + rand(3));
+async function work() {
+  let nPosts = num(process.env.BOT_POSTS, 1 + rand(2));
+  let nEngage = num(process.env.BOT_COMMENTS, 1 + rand(3));
   console.log(`Plan: up to ${nPosts} post(s), ${nEngage} engagement(s)${DRY ? ' (dry run)' : ''}`);
 
-  await signIn();
-  const global = (await fs.get('settings/global')) || {};
-  if (global.botsEnabled === false) { console.log('Bots are switched OFF in the Admin panel (settings/global.botsEnabled). Nothing to do.'); return; }
+  // soft limit: optional work stops, chat replies still go on
+  if ((nPosts || nEngage) && budget.softReached) {
+    console.log(`Soft read limit reached (${budget.usedToday}/${budget.daily} today): no new posts or engagement, chat replies only.`);
+    nPosts = 0; nEngage = 0;
+  }
+
+  await maintenance();
 
   // Chat-only runs (BOT_POSTS=0 BOT_COMMENTS=0) exit right away when nobody wrote to a bot: saves free-tier reads.
-  if (nPosts === 0 && nEngage === 0 && !(await fs.query({ from: [{ collectionId: 'botInbox' }], where: eq('handled', false), limit: 1 })).length) {
+  const pending = await fs.query({ from: [{ collectionId: 'botInbox' }], where: eq('handled', false), limit: 25 });
+  if (nPosts === 0 && nEngage === 0 && !pending.length) {
     console.log('No new messages for the bots.'); return;
   }
 
@@ -163,9 +262,11 @@ async function main() {
   const botMap = new Map(bots.map((b) => [b.id, b]));
   const st = await loadState();
   const stats = { posts: 0, comments: 0, reactions: 0, chats: 0 };
+  const global = (await fs.get('settings/global')) || {};
 
   // 2. auto posts
   for (const bot of shuffle(bots.filter((b) => b.autoPost !== false && canAct(st, b))).slice(0, nPosts)) {
+    if (budget.softReached) break;
     const pick = nextPostText(bot, st.used);
     if (!pick) continue;
     const id = await createPost(bot, pick.text);
@@ -176,7 +277,7 @@ async function main() {
 
   // 3/4. engagement on recent public posts
   let engaged = 0;
-  if (nEngage > 0) {
+  if (nEngage > 0 && !budget.softReached) {
     const recent = await fs.query({
       from: [{ collectionId: 'posts' }],
       where: eq('visibility', 'public'),
@@ -193,7 +294,7 @@ async function main() {
       return authorOk.get(uid);
     };
     for (const post of shuffle(recent)) {
-      if (engaged >= nEngage) break;
+      if (engaged >= nEngage || budget.softReached) break;
       if (post.groupId || post.hidden || post.commentsDisabled || post.sharedFrom) continue;
       if (post.createdAt && post.createdAt.getTime() < cutoff) continue;
       const fromBot = isBotId(post.uid);
@@ -227,34 +328,44 @@ async function main() {
     }
   }
 
-  // 5. chat replies
-  const inbox = await fs.query({ from: [{ collectionId: 'botInbox' }], where: eq('handled', false), limit: 25 });
-  for (const m of inbox) {
-    const bot = botMap.get(m.botId);
-    const mark = (skipped) => (DRY ? null : fs.patch(`botInbox/${m.id}`, { handled: true, handledAt: new Date(), ...(skipped ? { skipped } : {}) }));
-    if (!bot || bot.active === false || bot.chatEnabled === false) { await mark('chat-disabled'); continue; }
-    if ((st.daily.chat[m.fromUid] || 0) >= 15) { await mark('daily-limit'); continue; }
-    const chat = await fs.get(`chats/${m.chatId}`);
-    if (!chat || chat.type !== 'private' || !(chat.members || []).includes(m.fromUid) || !(chat.members || []).includes(bot.id)) { await mark('no-chat'); continue; }
-    const hist = (await fs.query({
-      from: [{ collectionId: 'messages' }],
-      orderBy: [{ field: { fieldPath: 'createdAt' }, direction: 'DESCENDING' }], limit: 6
-    }, `chats/${m.chatId}`)).reverse();
-    const reply = chatReply({ bot, text: m.text, history: hist });
-    if (DRY) console.log(`[dry] chat reply as ${bot.name}: ${reply.text}`);
-    else {
-      await fs.create(`chats/${m.chatId}/messages`, { uid: bot.id, text: reply.text, image: '', ai: true, createdAt: new Date() });
-      await fs.patch(`chats/${m.chatId}`, { lastMessage: { text: reply.text, uid: bot.id }, lastAt: new Date() });
-      await log(bot, 'chat', m.chatId, reply.text);
+  // 5. chat replies (the rows fetched above, plus rows that arrived since if there is room)
+  try {
+    const inbox = pending.length ? pending : [];
+    for (const m of inbox) {
+      if (budget.hardReached) break;
+      try { if ((await answerRow(m, botMap.get(m.botId), st)) === 'answered') stats.chats++; }
+      catch (e) {
+        if (e instanceof BudgetStop || isQuotaError(e)) throw e; // stop the whole run, the row stays pending
+        console.warn(`Reply for inbox row ${m.id} failed (${errCode(e)}); it stays pending.`);
+        await recordFailure(m, e);
+      }
     }
-    st.daily.chat[m.fromUid] = (st.daily.chat[m.fromUid] || 0) + 1;
-    stats.chats++;
-    await mark();
-    console.log(`Chat reply as ${bot.name} (${reply.intent}/${reply.lang})`);
+  } finally {
+    if (!DRY) { try { await saveState(st); } catch (e) { console.warn(`runner state not saved (${errCode(e)})`); } }
   }
-
-  if (!DRY) await saveState(st);
   console.log(`Done: ${stats.posts} post(s), ${stats.comments} comment(s), ${stats.reactions} reaction(s), ${stats.chats} chat repl${stats.chats === 1 ? 'y' : 'ies'}.`);
+}
+
+async function main() {
+  await signIn();
+  // FAIL-CLOSED kill switch: only an explicit botsEnabled === true lets the bots run.
+  const global = await fs.get('settings/global');
+  if (!global || global.botsEnabled !== true) {
+    console.log(`Bots are OFF (${global ? 'settings/global.botsEnabled is not true' : 'settings/global does not exist'}). Switch them on in Admin -> AI Bots. Nothing to do.`);
+    return;
+  }
+  budget.load(await fs.get('botState/budget'));
+  if (budget.hardReached) { console.log(`Daily read budget reached (${budget.usedToday}/${budget.daily}). Stopping; it resets at midnight Pacific time.`); }
+  else {
+    try { await work(); }
+    catch (e) {
+      if (e instanceof BudgetStop) console.log(`Stopping cleanly. ${e.message}. Unanswered messages stay pending.`);
+      else if (isQuotaError(e)) console.log('Firestore answered 429 / quota exceeded. Stopping cleanly and NOT retrying.');
+      else throw e;
+    }
+  }
+  if (!DRY) { try { await budget.save(fs, { maintenanceDone }); } catch (e) { console.warn(`read counter not saved (${errCode(e)})`); } }
+  console.log(budget.summary());
 }
 
 main().catch((e) => { console.error(e.message || e); process.exit(1); });
