@@ -12,7 +12,8 @@ export function startMock({ port = 0, seed = {}, authUsers = ['runner1'], runner
   const calls = [];
   let n = 0;
   // faults (test only): { authDelete: n } -> the next n Auth deletes answer 500; { commitAfter: k } -> after k good commits, ONE commit answers 500
-  const fault = { authDelete: faults.authDelete || 0, commitAfter: faults.commitAfter ?? null };
+  // createFail: n -> the next n creates inside a /messages collection answer 500; quota: true -> every query answers 429
+  const fault = { authDelete: faults.authDelete || 0, commitAfter: faults.commitAfter ?? null, createFail: faults.createFail || 0, quota: !!faults.quota };
   const gate = rules ? makeRulesGate(docs) : null;
   const put = (path, obj) => docs.set(path, { fields: toFields(obj) });
   Object.entries(seed).forEach(([p, o]) => put(p, o));
@@ -32,6 +33,7 @@ export function startMock({ port = 0, seed = {}, authUsers = ['runner1'], runner
     const f = w.fieldFilter; const a = getField(d, f.field.fieldPath); const b = fv(f.value);
     if (f.op === 'EQUAL') return a instanceof Date && b instanceof Date ? a.getTime() === b.getTime() : a === b;
     if (f.op === 'ARRAY_CONTAINS') return Array.isArray(a) && a.includes(b);
+    if (f.op === 'LESS_THAN') { const x = a instanceof Date ? a.getTime() : a; const y = b instanceof Date ? b.getTime() : b; return a != null && x < y; }
     throw new Error('mock: unsupported op ' + f.op);
   };
   const setPath = (obj, path, value) => { const ks = path.split('.'); let c = obj; ks.slice(0, -1).forEach((k) => { c[k] ||= { mapValue: { fields: {} } }; c = c[k].mapValue.fields ||= {}; }); c[ks.at(-1)] = value; };
@@ -72,6 +74,7 @@ export function startMock({ port = 0, seed = {}, authUsers = ['runner1'], runner
         const rest = decodeURIComponent(pm[1]).replace(/^\//, '');
 
         if (rest.endsWith(':runQuery') || rest === ':runQuery') {
+          if (fault.quota) return send(res, 429, { error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'Quota exceeded.' } });
           const parent = rest.replace(/:runQuery$/, '').replace(/\/$/, '');
           const q = body.structuredQuery; const cid = q.from[0].collectionId;
           let rows = [...docs.entries()].filter(([p]) => { const par = parentOf(p); return p.split('/').at(-2) === cid && (parent ? par === `${parent}/${cid}` : par === cid); })
@@ -114,6 +117,7 @@ export function startMock({ port = 0, seed = {}, authUsers = ['runner1'], runner
           const d = docs.get(rest); return d ? send(res, 200, out(rest, d)) : send(res, 404, { error: 'not found' });
         }
         if (req.method === 'POST' && isCollection) {
+          if (fault.createFail > 0 && rest.endsWith('/messages')) { fault.createFail--; return send(res, 500, { error: 'injected create failure' }); }
           const id = params.get('documentId') || `A${++n}`; const p = `${rest}/${id}`;
           if (!ok(req, 'create', p, body.fields)) return forbid(res);
           if (docs.has(p)) return send(res, 409, { error: 'ALREADY_EXISTS' });
@@ -136,7 +140,7 @@ export function startMock({ port = 0, seed = {}, authUsers = ['runner1'], runner
     });
   });
   return new Promise((resolve) => srv.listen(port, '127.0.0.1', () => resolve({
-    url: `http://127.0.0.1:${srv.address().port}`, docs, authDeleted, calls, put, denied: gate ? gate.denied : [],
+    url: `http://127.0.0.1:${srv.address().port}`, docs, authDeleted, calls, put, fault, denied: gate ? gate.denied : [],
     get: (p) => (docs.has(p) ? fromFields(docs.get(p).fields) : null),
     ids: (col) => [...docs.keys()].filter((p) => parentOf(p) === col).map((p) => p.split('/').at(-1)),
     close: () => new Promise((r) => srv.close(r))

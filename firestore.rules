@@ -50,6 +50,17 @@ service cloud.firestore {
       return signedIn() && exists(/databases/$(database)/documents/botRunners/$(request.auth.uid));
     }
 
+    // EMERGENCY KILL SWITCH, enforced here and not only in the script. Fail-closed: bots are ON only while
+    // settings/global exists AND botsEnabled is explicitly true. A missing document makes get() fail, which denies.
+    function botsOn() {
+      return get(/databases/$(database)/documents/settings/global).data.get('botsEnabled', false) == true;
+    }
+    // The runner may WRITE only while the kill switch is on AND its uid is not also a staff account.
+    // (A runner uid in /admins loses its runner power; the runner is a machine account, not a person.)
+    function runnerOn() {
+      return isBotRunner() && botsOn() && !isStaffUid(request.auth.uid);
+    }
+
     // Not blocked and not under a temporary suspension.
     function notBanned() {
       let u = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
@@ -118,6 +129,7 @@ service cloud.firestore {
       allow create, update: if isSuper()
         && uid != request.auth.uid
         && !uid.matches('bot_.*')
+        && !exists(/databases/$(database)/documents/botRunners/$(uid))
         && exists(/databases/$(database)/documents/users/$(uid))
         && request.resource.data.keys().hasOnly(['role', 'addedBy', 'addedAt'])
         && request.resource.data.role in ['super_admin', 'admin', 'moderator']
@@ -180,21 +192,54 @@ service cloud.firestore {
       allow write: if false; // create by hand in the Firebase console
     }
     match /botState/{id} {
-      allow read, write: if isBotRunner();
+      allow read: if isBotRunner();
+      allow write: if runnerOn();
     }
-    // A user's message to a bot is mirrored here so the scheduled job can answer it.
+    // "Please answer my message": a POINTER to a chat message, never a copy of its text. The scheduled job reads the
+    // message from the chat itself, answers, then blanks and deletes the row. Only the runner and a super_admin can
+    // read it (moderators and ordinary admins cannot).
+    // PHASE 1 (rollout): the old shape {text} is still accepted so browsers that cached the old script keep working.
+    // PHASE 2 (a later change, after at least 24 hours): remove the legacy branch marked LEGACY below.
     match /botInbox/{id} {
       allow create: if notBanned()
+        && botsOn()
         && request.resource.data.fromUid == request.auth.uid
         && isBotUser(request.resource.data.botId)
-        && textOk(request.resource.data.text, 500)
         && request.resource.data.handled == false
-        && request.resource.data.chatId == pairId(request.auth.uid, request.resource.data.botId);
-      allow read: if isBotRunner() || isStaff();
-      allow update, delete: if isBotRunner() || isAdmin();
+        && request.resource.data.chatId == pairId(request.auth.uid, request.resource.data.botId)
+        && (
+          (request.resource.data.keys().hasOnly(['fromUid', 'botId', 'chatId', 'messageId', 'handled', 'createdAt'])
+            && request.resource.data.messageId is string
+            && request.resource.data.messageId.size() > 0
+            && request.resource.data.messageId.size() <= 40
+            // the pointed-to message must exist in that chat and be the sender's own
+            && get(/databases/$(database)/documents/chats/$(request.resource.data.chatId)/messages/$(request.resource.data.messageId)).data.uid == request.auth.uid)
+          // LEGACY (phase 1 only): old clients send the text itself
+          || (request.resource.data.keys().hasOnly(['fromUid', 'botId', 'chatId', 'text', 'handled', 'createdAt'])
+            && textOk(request.resource.data.text, 500))
+        );
+      allow read: if isBotRunner() || isSuper();
+      // the runner can only record progress. It can never change who/what/where a row points to, and it can only blank a
+      // text, never write one. lastError is a short code, not free text.
+      allow update: if runnerOn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['handled', 'handledAt', 'answered', 'skipped', 'attempts', 'lastError', 'text'])
+        && request.resource.data.get('answered', false) is bool
+        && (request.resource.data.get('text', '') == resource.data.get('text', '') || request.resource.data.get('text', '') == '')
+        && request.resource.data.handled is bool
+        && request.resource.data.get('attempts', 0) is int
+        && request.resource.data.get('attempts', 0) >= 0
+        && request.resource.data.get('attempts', 0) <= 10
+        && request.resource.data.get('lastError', '') is string
+        && request.resource.data.get('lastError', '').size() <= 60
+        && request.resource.data.get('skipped', '') is string
+        && request.resource.data.get('skipped', '').size() <= 40;
+      // the runner may delete a row only once it is answered/closed (handled) or after 7 days; a super_admin may always
+      allow delete: if (runnerOn()
+          && (resource.data.handled == true || request.time > resource.data.createdAt + duration.value(7, 'd')))
+        || isSuper();
     }
     match /botLogs/{id} {
-      allow create: if isBotRunner() || isAdmin();
+      allow create: if runnerOn() || isAdmin();
       allow read: if isStaff();
       allow update: if false;
       allow delete: if isAdmin();
@@ -255,13 +300,13 @@ service cloud.firestore {
       );
 
       allow create: if
-        (notBanned()
-          && request.resource.data.uid == request.auth.uid
+        (request.resource.data.uid == request.auth.uid
+          && notBanned()
           && validPost(request.resource.data)
           && (request.resource.data.groupId == null
               || request.auth.uid in groupDoc(request.resource.data.groupId).members))
         // staff or the bot-runner posting as an AI bot: public, text/photo only, never a video
-        || ((isAdmin() || isBotRunner())
+        || ((runnerOn() || isAdmin())
           && isBotUser(request.resource.data.uid)
           && validPost(request.resource.data)
           && request.resource.data.visibility == 'public'
@@ -272,17 +317,15 @@ service cloud.firestore {
         // staff moderation: hide / restore, switch comments on or off
         if (isStaff()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hidden', 'commentsDisabled']))
-        // bot-runner: bump commentCount by one after commenting as a bot
-        || (isBotRunner()
+        // bot-runner (one check of the kill switch for both cases): bump commentCount by one after commenting as a bot,
+        // or add / change a reaction under a bot's own key
+        || (runnerOn()
           && engagementOk(resource.data.uid)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount'])
-          && math.abs(request.resource.data.commentCount - resource.data.commentCount) <= 1)
-        // bot-runner: add / change a reaction, only under a bot's own key
-        || (isBotRunner()
-          && resource.data.visibility == 'public'
-          && engagementOk(resource.data.uid)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
-          && request.resource.data.reactions.diff(resource.data.reactions).affectedKeys().hasOnly(botIds()))
+          && ((request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount'])
+              && math.abs(request.resource.data.commentCount - resource.data.commentCount) <= 1)
+            || (resource.data.visibility == 'public'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+              && request.resource.data.reactions.diff(resource.data.reactions).affectedKeys().hasOnly(botIds()))))
         // everybody else: their own reaction key, or a counter moved by exactly one step
         || (notBanned() && (
           (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
@@ -302,12 +345,12 @@ service cloud.firestore {
         allow read: if signedIn()
           && (isStaff() || canSeePost(get(/databases/$(database)/documents/posts/$(postId)).data));
         allow create: if
-          (notBanned()
-            && request.resource.data.uid == request.auth.uid
+          (request.resource.data.uid == request.auth.uid // cheap check first: the runner (a bot's uid in the data) stops here
+            && notBanned()
             && textOk(request.resource.data.text, 2000)
             && userMayComment(postId))
           // staff or the bot-runner commenting as an AI bot (public posts with comments on)
-          || ((isAdmin() || isBotRunner())
+          || ((runnerOn() || isAdmin())
             && isBotUser(request.resource.data.uid)
             && request.resource.data.get('ai', false) == true // bot content must always be flagged as AI
             && textOk(request.resource.data.text, 2000)
@@ -390,7 +433,7 @@ service cloud.firestore {
           && (request.resource.data.members == resource.data.members
               || (resource.data.type == 'group' && resource.data.createdBy == request.auth.uid)))
         // bot-runner: only the "last message" preview of a private chat, written as a bot member
-        || (isBotRunner()
+        || (runnerOn()
           && resource.data.type == 'private'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessage', 'lastAt'])
           && isBotUser(request.resource.data.lastMessage.uid)
@@ -404,12 +447,12 @@ service cloud.firestore {
             && get(/databases/$(database)/documents/chats/$(chatId)).data.type == 'private'
             && get(/databases/$(database)/documents/chats/$(chatId)).data.members.hasAny(botIds()));
         allow create: if
-          (notBanned()
-            && request.resource.data.uid == request.auth.uid
+          (request.resource.data.uid == request.auth.uid
+            && notBanned()
             && textOk(request.resource.data.text, 4000)
             && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members)
           // bot-runner answering a user's message as the bot that is a member of this chat
-          || (isBotRunner()
+          || (runnerOn()
             && isBotUser(request.resource.data.uid)
             && request.resource.data.get('ai', false) == true // bot content must always be flagged as AI
             && textOk(request.resource.data.text, 4000)
@@ -482,7 +525,7 @@ service cloud.firestore {
           && request.resource.data.to is string
           && request.resource.data.to != request.auth.uid)
         // bot-runner telling a user that a bot commented / replied
-        || (isBotRunner()
+        || (runnerOn()
           && isBotUser(request.resource.data.from)
           && request.resource.data.to is string);
       allow update: if signedIn() && resource.data.to == request.auth.uid

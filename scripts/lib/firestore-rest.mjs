@@ -111,4 +111,5 @@ export function createClient({ projectId, fsUrl = 'https://firestore.googleapis.
 // helper for structured query filters
 export const eq = (field, value) => ({ fieldFilter: { field: { fieldPath: field }, op: 'EQUAL', value: toValue(value) } });
 export const arrayContains = (field, value) => ({ fieldFilter: { field: { fieldPath: field }, op: 'ARRAY_CONTAINS', value: toValue(value) } });
+export const lt = (field, value) => ({ fieldFilter: { field: { fieldPath: field }, op: 'LESS_THAN', value: toValue(value) } });
 export const and = (...filters) => ({ compositeFilter: { op: 'AND', filters } });

@@ -70,7 +70,7 @@ test('bot runner: consent, safety, limits, chat, logs', async () => {
     assert.equal(msgs.length, 1);
     const reply = m.get(`chats/bot_06_u1/messages/${msgs[0]}`);
     assert.equal(reply.uid, 'bot_06'); assert.match(reply.text, /এআই বট/, 'answers honestly that it is an AI bot');
-    assert.equal(m.get('botInbox/i1').handled, true);
+    assert.equal(m.get('botInbox/i1'), null, 'an answered row (even an old one with text) is deleted after the reply');
     assert.equal(m.get('chats/bot_06_u1').lastMessage.uid, 'bot_06');
 
     assert.ok(m.ids('botLogs').length >= 4, 'activity logged');
@@ -86,8 +86,11 @@ test('bot runner: consent, safety, limits, chat, logs', async () => {
 test('bot runner: global OFF, per-bot OFF and daily limit stop everything', async () => {
   for (const [name, seed] of [
     ['global off', { ...seedBots(), 'settings/global': { botsEnabled: false } }],
-    ['bots inactive', { ...seedBots({ active: false }) }],
-    ['limit 0', { ...seedBots({ dailyLimit: 0 }) }]
+    ['bots inactive', { ...seedBots({ active: false }), 'settings/global': { botsEnabled: true } }],
+    ['limit 0', { ...seedBots({ dailyLimit: 0 }), 'settings/global': { botsEnabled: true } }],
+    ['no settings document (fail-closed)', { ...seedBots() }],
+    ['botsEnabled missing', { ...seedBots(), 'settings/global': { botToBotComments: false } }],
+    ['botsEnabled is a string, not true', { ...seedBots(), 'settings/global': { botsEnabled: 'true' } }]
   ]) {
     const m = await startMock({ seed: { ...seed, 'users/u1': { name: 'R', settings: { allowBotEngagement: true } }, 'posts/p1': post('u1', 'trip to the beach') } });
     try {
