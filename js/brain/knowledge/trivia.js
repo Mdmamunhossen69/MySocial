@@ -53,10 +53,27 @@ export const TRIVIA_BY_ID = new Map(TRIVIA.map((q) => [q.id, q]));
 export const TRIVIA_CATS = ['geography', 'bangladesh', 'science', 'space', 'animals', 'math', 'tech', 'sports', 'culture'];
 
 // Is `text` a correct answer to `q`? Short ASCII accept-words must match whole words ("6" must not match "16").
+const NEG_BEFORE = /(^| )(not|never|isn't|isnt|wasn't|wont|won't|cannot|can't|nor|neither)( [^ ]+){0,2} $/;
+const NEG_AFTER_BN = /^ ?(নয়|নয়|নহে|না|নেই)( |$)/;
+const HEDGE = /( or | nor | নাকি | অথবা | কিংবা | বা )/;
+const escRe = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// Is `text` a correct answer to `q`? Short ASCII accept-words must match whole words ("6" must not match "16").
+// An answer that is negated ("not Paris", "ঢাকা নয়") or that hedges between choices ("Paris or London") is NOT correct.
 export function checkAnswer(q, text) {
-  const t = ` ${String(text || '').toLowerCase().replace(/[^\p{L}\p{M}\p{N}\s.+\-']/gu, ' ').replace(/\s+/g, ' ').trim()} `;
+  const t = ` ${String(text || '').toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/[^\p{L}\p{M}\p{N}\s.+\-']/gu, ' ').replace(/\s+/g, ' ').trim()} `;
+  if (HEDGE.test(t)) return false;
   return q.accept.some((w) => {
-    if (/^[\x00-\x7f]+$/.test(w)) return t.includes(` ${w} `) || (w.length > 4 && t.includes(w));
-    return t.includes(w);
+    const ascii = /^[\x00-\x7f]+$/.test(w);
+    const re = ascii ? new RegExp(`(^| )${escRe(w)}${w.length > 4 ? '(s|es)?' : ''}(?= |$)`, 'g') : new RegExp(escRe(w), 'g');
+    let m;
+    while ((m = re.exec(t))) {
+      const start = m.index + (ascii && m[1] ? m[1].length : 0);
+      const before = t.slice(0, start); const after = t.slice(start + w.length);
+      if (NEG_BEFORE.test(before)) continue;
+      if (NEG_AFTER_BN.test(after)) continue;
+      if (!ascii && /(^| )(না|নয়) $/.test(before)) continue;
+      return true;
+    }
+    return false;
   });
 }

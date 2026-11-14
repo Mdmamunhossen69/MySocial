@@ -6,13 +6,13 @@
 import { ALLOWED_TOPICS, ID_RE, DOC_ID_RE, UID_RE } from './vocab.js';
 import { dhaka, clamp } from './util.js';
 
-export const LIMITS = { people: 60, recentFp: 40, commented: 150, used: 40, seen: 12, topics: 5, ttlDays: 90, maxBytes: 40000 };
+export const LIMITS = { people: 60, recentFp: 40, commented: 150, used: 40, posted: 200, seen: 12, topics: 5, ttlDays: 90, maxBytes: 40000 };
 export const INTENT_CODES = ['greeting', 'how', 'thanks', 'bye', 'help', 'sad', 'quiz', 'skip', 'moon', 'more', 'why', 'tip', 'laugh', 'knowledge', 'smalltalk', 'whoami', 'forget', 'injection', 'crisis', 'empty', 'unknown', 'quiz-answer'];
 const DAY = 86400000;
 
 export const emptyBrain = (botId, now = Date.now()) => ({
   v: 1, botId,
-  own: { recentFp: [], commented: [], used: [], trivia: null },
+  own: { recentFp: [], commented: [], used: [], posted: [], trivia: null },
   people: {},
   counters: { day: '', posts: 0, comments: 0, reactions: 0, chats: 0, lastPostAt: 0, lastCommentAt: 0, failures: 0 },
   updatedAt: now
@@ -34,16 +34,28 @@ function cleanPerson(p, now) {
   };
 }
 
+// Memory isolation is enforced here: a brain belongs to exactly ONE bot and any mismatch is a hard error (fail-closed).
+export class BrainOwnerError extends Error { constructor(msg) { super(msg); this.code = 'brain-owner-mismatch'; } }
+export function assertOwner(brain, botId) {
+  if (!brain || typeof brain !== 'object' || typeof botId !== 'string' || !botId || brain.botId !== botId) {
+    throw new BrainOwnerError(`brain of ${brain && brain.botId} cannot be used for ${botId}`);
+  }
+  return brain;
+}
+
 export const brainBytes = (b) => JSON.stringify(b).length;
 
 // Rebuilds a brain from whatever was stored: wrong types are repaired, unknown keys and any non-controlled values dropped.
 export function sanitizeBrain(raw, botId, now = Date.now()) {
+  // nothing stored yet = a fresh brain; anything stored must belong to THIS bot, never silently re-labelled
+  if (raw !== null && raw !== undefined && (typeof raw !== 'object' || raw.botId !== botId)) throw new BrainOwnerError(`stored brain belongs to ${raw && raw.botId}, not ${botId}`);
   const r = raw && typeof raw === 'object' ? raw : {};
   const b = emptyBrain(botId, now);
   const own = r.own && typeof r.own === 'object' ? r.own : {};
   b.own.recentFp = strList(own.recentFp, /^[0-9a-f]{16}$/, LIMITS.recentFp);
   b.own.commented = strList(own.commented, DOC_ID_RE, LIMITS.commented);
   b.own.used = strList(own.used, ID_RE, LIMITS.used);
+  b.own.posted = strList(own.posted, ID_RE, LIMITS.posted);   // every entry this bot has EVER posted (oldest dropped after 200): never posted twice
   if (own.trivia && typeof own.trivia === 'object' && typeof own.trivia.id === 'string' && ID_RE.test(own.trivia.id)) b.own.trivia = { id: own.trivia.id, at: num(own.trivia.at, 0, now + DAY), revealed: own.trivia.revealed === true };
   const c = r.counters && typeof r.counters === 'object' ? r.counters : {};
   b.counters = { day: typeof c.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(c.day) ? c.day : '', posts: num(c.posts, 0, 1000), comments: num(c.comments, 0, 1000), reactions: num(c.reactions, 0, 1000), chats: num(c.chats, 0, 100000), lastPostAt: num(c.lastPostAt, 0, now + DAY), lastCommentAt: num(c.lastCommentAt, 0, now + DAY), failures: num(c.failures, 0, 100000) };
@@ -73,10 +85,11 @@ export function rollDay(b, now = Date.now()) {
 }
 
 export const personOf = (b, uid) => b.people[uid] || null;
-export function touchPerson(b, uid, { lang, topics = [], intent = '', entry = '', now = Date.now() } = {}) {
+export function touchPerson(b, uid, { lang, topics = [], intent = '', entry = '', now = Date.now(), count = true } = {}) {
   if (!UID_RE.test(String(uid)) || String(uid).startsWith('bot_')) return null;
   const p = b.people[uid] || cleanPerson({}, now);
-  p.n += 1; p.last = now; p.lang = lang === 'bn' ? 'bn' : 'en';
+  if (count) p.n += 1;
+  p.last = now; p.lang = lang === 'bn' ? 'bn' : 'en';
   for (const t of topics) if (ALLOWED_TOPICS.includes(t)) { p.topics = p.topics.filter((x) => x !== t); p.topics.push(t); }
   p.topics = p.topics.slice(-LIMITS.topics);
   if (INTENT_CODES.includes(intent)) p.lastIntent = intent;

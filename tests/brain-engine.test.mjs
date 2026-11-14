@@ -3,6 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { reply, BRAINS, isPilot } from '../js/brain/engine.js';
+import { TRIVIA, checkAnswer } from '../js/brain/knowledge/trivia.js';
 import { emptyBrain, sanitizeBrain, forgetPerson, touchPerson, prune, LIMITS, brainBytes } from '../js/brain/memory.js';
 import { PILOT_BOT_IDS } from '../js/brain/vocab.js';
 import { VOICES } from '../js/brain/personalities.js';
@@ -52,30 +53,48 @@ test('honesty: unknown things are not invented, and the reply says so', () => {
   const gib = talk('bot_17', ['asdf qwerty zxcv']).out[0]; assert.equal(gib.intent, 'unknown');
 });
 
-test('context + variety: the same question does not always get the same template, and follow-ups use memory', () => {
+test('variety: the same greeting question gets several different phrasings across seeds, never an empty reply', () => {
   const seen = new Set();
-  for (let s = 1; s <= 12; s++) seen.add(talk('bot_01', ['hi']).out[0].text.length === 0 ? '' : talk('bot_01', ['hello'], { seed: s }).out[0].text);
-  assert.ok(seen.size >= 3, `expected several different greetings, got ${seen.size}`);
-  const { brain, out } = talk('bot_01', ['how do I make a strong password?', 'hello']);
-  assert.equal(out[1].intent, 'greeting');
-  assert.match(out[1].text, /security|online safety|tech|প্রযুক্তি|নিরাপত্তা/i, 'a returning user is greeted with the topic from earlier');
-  assert.deepEqual(brain.people[U1].topics.includes('security'), true);
-  // "more" does not repeat what was just given
-  const t = talk('bot_01', ['tip', 'tip', 'tip']).out.map((o) => o.entry);
-  assert.equal(new Set(t).size, 3, 'three different tips');
+  for (let sd = 1; sd <= 12; sd++) { const t = talk('bot_01', ['hello'], { seed: sd }).out[0].text; assert.ok(t.length > 0); seen.add(t); }
+  assert.ok(seen.size >= 3, `expected at least 3 different greetings over 12 seeds, got ${seen.size}`);
+  // the same seed is reproducible (no hidden randomness)
+  assert.equal(talk('bot_01', ['hello'], { seed: 5 }).out[0].text, talk('bot_01', ['hello'], { seed: 5 }).out[0].text);
 });
 
-test('quiz (bot_19): asks, checks the answer in English and Bengali, keeps score, skip reveals', () => {
+test('context: a returning user is greeted with the topic from earlier; "tip" never repeats a tip in a row', () => {
+  const { brain, out } = talk('bot_01', ['how do I make a strong password?', 'hello']);
+  assert.equal(out[0].intent, 'knowledge'); assert.equal(out[1].intent, 'greeting');
+  assert.match(out[1].text, /security|online safety|tech|প্রযুক্তি|নিরাপত্তা/i, 'a returning user is greeted with the topic from earlier');
+  assert.equal(brain.people[U1].topics.includes('security'), true);
+  const t = talk('bot_01', ['tip', 'tip', 'tip']).out.map((o) => o.entry);
+  assert.ok(t.every(Boolean), 'every tip names a real entry'); assert.equal(new Set(t).size, 3, 'three different tips');
+});
+
+test('quiz (bot_19): asking, skipping and scoring', () => {
   const { brain, out } = talk('bot_19', ['quiz', 'skip', 'quiz']);
   assert.equal(out[0].intent, 'quiz'); assert.equal(out[1].intent, 'skip'); assert.match(out[1].text, /Score: 0\/1/);
-  const q = brain.people[U1].quiz; assert.equal(q.asked, 2);
-  // a correct answer: ask, read the id from memory, answer
-  const b = emptyBrain('bot_19'); const rand = seeded('q');
-  const ask = reply({ bot: { id: 'bot_19', name: 'T' }, brain: b, uid: U1, text: 'quiz', now: 1e12, rand });
-  const pending = b.people[U1].quiz.pending; assert.ok(pending);
-  const ans = { 'q-aus': 'Canberra', 'q-ocean': 'Pacific', 'q-hex': 'six', 'q-co2': 'carbon dioxide', 'q-dhaka': 'Dhaka' }[pending] || null;
-  if (ans) { const r = reply({ bot: { id: 'bot_19', name: 'T' }, brain: b, uid: U1, text: ans, now: 1e12, rand }); assert.equal(r.correct, true); assert.equal(b.people[U1].quiz.right, 1); }
-  assert.equal(ask.intent, 'quiz');
+  assert.equal(brain.people[U1].quiz.asked, 2);
+});
+
+test('quiz (bot_19): EVERY question accepts its own answer (English) and rejects a wrong one; the score follows', () => {
+  for (const q of TRIVIA) {
+    const b = emptyBrain('bot_19'); touchPerson(b, U1, { lang: 'en', now: 1e12, count: false });
+    const p = b.people[U1]; p.quiz.pending = q.id; p.quiz.pAt = 1e12; p.quiz.asked = 1;
+    const ok = reply({ bot: { id: 'bot_19', name: 'T' }, brain: b, uid: U1, text: `I think it is ${q.accept.find((a) => /^[\x00-\x7f]+$/.test(a)) || q.a.en}`, now: 1e12, rand: seeded(q.id) });
+    assert.equal(ok.correct, true, `${q.id}: its own answer must be accepted`); assert.equal(b.people[U1].quiz.right, 1); assert.equal(b.people[U1].quiz.pending, '');
+    const b2 = emptyBrain('bot_19'); touchPerson(b2, U1, { lang: 'en', now: 1e12, count: false });
+    b2.people[U1].quiz.pending = q.id; b2.people[U1].quiz.pAt = 1e12; b2.people[U1].quiz.asked = 1;
+    const bad = reply({ bot: { id: 'bot_19', name: 'T' }, brain: b2, uid: U1, text: 'banana', now: 1e12, rand: seeded(q.id) });
+    assert.equal(bad.correct, false, `${q.id}: a wrong answer is rejected`); assert.equal(b2.people[U1].quiz.right, 0); assert.match(bad.text, /The answer:/);
+  }
+});
+
+test('quiz (bot_19): Bengali answers work, and negated or hedged answers are NOT counted as correct', () => {
+  const ask = (id, text) => { const b = emptyBrain('bot_19'); touchPerson(b, U1, { lang: 'en', now: 1e12, count: false }); Object.assign(b.people[U1].quiz, { pending: id, pAt: 1e12, asked: 1 }); return reply({ bot: { id: 'bot_19', name: 'T' }, brain: b, uid: U1, text, now: 1e12, rand: seeded('x') }); };
+  assert.equal(ask('q-aus', 'ক্যানবেরা').correct, true);
+  for (const t of ['not Canberra', 'it is not canberra', 'Canberra or Sydney', 'maybe canberra or london', 'canberra নয়', 'canberra না', 'ক্যানবেরা নয়', 'ক্যানবেরা নাকি সিডনি']) assert.equal(ask('q-aus', t).correct, false, t);
+  for (const t of ['canberra', 'It is Canberra!', 'I think canberra', 'its canberra, not sydney']) assert.equal(ask('q-aus', t).correct, true, t);
+  assert.equal(checkAnswer(TRIVIA.find((q) => q.accept.includes('6')) || TRIVIA[0], '16'), false, 'a short number must not match inside a longer number');
 });
 
 test('safety: prompt injection, identity questions and crisis messages get fixed safe answers and are not remembered', () => {
@@ -143,7 +162,7 @@ test('retention and size: old people expire, the newest are kept, the document s
   assert.ok(brainBytes(b) <= LIMITS.maxBytes);
   const old = emptyBrain('bot_01', now); touchPerson(old, 'oldperson01', { now: now - (LIMITS.ttlDays + 1) * 86400000 }); touchPerson(old, 'newperson01', { now });
   prune(old, now); assert.deepEqual(Object.keys(old.people), ['newperson01']);
-  const big = sanitizeBrain({ people: Object.fromEntries(Array.from({ length: 500 }, (_, i) => [`user${String(i).padStart(8, '0')}`, { n: 1, last: now }])) }, 'bot_01', now);
+  const big = sanitizeBrain({ botId: 'bot_01', people: Object.fromEntries(Array.from({ length: 500 }, (_, i) => [`user${String(i).padStart(8, '0')}`, { n: 1, last: now }])) }, 'bot_01', now);
   assert.ok(Object.keys(big.people).length <= LIMITS.people);
 });
 

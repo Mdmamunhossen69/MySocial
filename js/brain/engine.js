@@ -5,7 +5,7 @@ import { understand } from './understanding.js';
 import { VOICES, BASE, phrases } from './personalities.js';
 import { buildIndex, search, CONFIDENT, NEAR } from './retrieval.js';
 import { simhash, nearDuplicate, pick } from './util.js';
-import { touchPerson, forgetPerson, personOf, remember, rollDay, LIMITS } from './memory.js';
+import { touchPerson, forgetPerson, personOf, remember, rollDay, assertOwner, LIMITS } from './memory.js';
 import { TOPIC_LABEL, PILOT_BOT_IDS } from './vocab.js';
 import { TECH } from './knowledge/tech.js';
 import { SKY, moonSentence } from './knowledge/sky.js';
@@ -79,11 +79,21 @@ function finishQuiz(ctx, person, how, userText) {
   return { text: join(say(ctx, 'quizWrong'), (ctx.lang === 'bn' ? 'উত্তর: ' : 'The answer: ') + ans, scoreLine(ctx, q), say(ctx, 'close')), intent: 'quiz-answer', quiz: t.id, correct: false };
 }
 
+// What may be written to a LOG about a reply: fixed codes only, never any text. A crisis / injection / forget message
+// (and our answer to it) is therefore never logged; the runner must log safeLog(result), not the result itself.
+export function safeLog(res, botId) {
+  const r = res && typeof res === 'object' ? res : {};
+  const code = (v) => (typeof v === 'string' && /^[a-z0-9-]{1,24}$/.test(v) ? v : '');
+  const quiet = ['crisis', 'injection', 'forget'].includes(r.intent);
+  return { bot: code(botId), intent: code(r.intent), lang: r.lang === 'bn' ? 'bn' : 'en', len: typeof r.text === 'string' ? r.text.length : 0, ...(quiet ? {} : { entry: code(r.entry) }) };
+}
+
 // history: [{ uid, text }] oldest first (the visible chat). Returns { text, intent, lang, entry?, topic? }.
 // The brain is changed in place; the caller saves it (through sanitizeBrain) after a successful reply.
 export function reply({ bot, brain, uid, text, history = [], now = Date.now(), rand = Math.random }) {
   const kb = BRAINS[bot.id];
   if (!kb) throw new Error(`no smart brain for ${bot.id}`);
+  assertOwner(brain, bot.id);
   rollDay(brain, now);
   const u = understand(text);
   const recent = [...brain.own.recentFp, ...history.filter((m) => m.uid === bot.id).slice(-6).map((m) => simhash(String(m.text || '')))];
@@ -106,7 +116,8 @@ export function reply({ bot, brain, uid, text, history = [], now = Date.now(), r
   if (u.intent === 'whoami') return simple('whoami');
 
   // an open quiz question waits for an answer (bot_19)
-  const p = person || touchPerson(brain, uid, { lang: ctx.lang, now }) ; // creates the entry; touchPerson counted one turn already
+  // the quiz bot needs a record to hold the open question; creating it does not count as a conversation turn
+  const p = person || (kb.quiz ? touchPerson(brain, uid, { lang: ctx.lang, now, count: false }) : null);
   if (kb.quiz && p) {
     if (p.quiz.pending && now - p.quiz.pAt > QUIZ_TTL) p.quiz.pending = '';
     const meta = ['greeting', 'how', 'thanks', 'bye', 'help', 'sad', 'laugh'];
